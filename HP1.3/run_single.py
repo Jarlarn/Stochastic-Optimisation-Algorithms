@@ -14,6 +14,5 @@ number_of_generations = 2000        # Changes allowed.
 
 [maximum_fitness, x_best] = run_function_optimization(population_size, number_of_genes, number_of_variables, maximum_variable_value, tournament_size, \
                                        tournament_probability, crossover_probability, mutation_probability, number_of_generations);
-#Own line
 output = f"Fitness: {maximum_fitness:.4f}, x = ({x_best[0]:.8f},{x_best[1]:.8f})"
 print(output)

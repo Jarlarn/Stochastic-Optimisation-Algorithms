@@ -64,14 +64,11 @@ def evaluate_individual(x):
 # Select individuals:
 # Uncomment the line below and implement the function
 def tournament_select(fitness_list, tournament_probability, tournament_size):
-    # The same individual picked several times?
     population_size = len(fitness_list)
     contestants = []
     for _ in range(tournament_size):
         contestant = random.randint(0, population_size - 1)
         contestants.append(contestant)
-
-    # competitors = [random.randint(0, pop_size - 1) for _ in range(tournament_size)] List comprehension
 
     contestants.sort(key=lambda idx: fitness_list[idx], reverse=True)
 
@@ -79,7 +76,6 @@ def tournament_select(fitness_list, tournament_probability, tournament_size):
         if random.random() < tournament_probability:
             return contestant
 
-    # What to do if none is selected?
     return contestants[0]
 
 
