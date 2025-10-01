@@ -28,14 +28,19 @@ def initialize_pheromone_levels(number_of_cities, tau_0):
 
 def get_visibility(city_locations):
     number_of_cities = len(city_locations)
-    visibility_matrix = np.zeros((number_of_cities,number_of_cities))
-
-    for i in range(visibility_matrix):
-        for j in range(visibility_matrix):
-            
-
-
-# Add code here!
+    visibility_matrix = np.zeros((number_of_cities, number_of_cities))
+    for i in range(number_of_cities):
+        for j in range(number_of_cities):
+            if i != j:
+                x1 = city_locations[j][0]
+                y1 = city_locations[j][1]
+                x2 = city_locations[i][0]
+                y2 = city_locations[i][1]
+                distance = np.sqrt((y2 - y1) ** 2 + (x2 - x1) ** 2)
+                visibility_matrix[i][j] = 1.0 / distance
+            else:
+                visibility_matrix[i][j] = 0.0
+    return visibility_matrix
 
 
 #################################################################
@@ -44,12 +49,57 @@ def get_visibility(city_locations):
 #################################################################
 
 
-def get_node():
-    pass
+def get_next_node(potential_cities):
+
+    # Sort by probability in descending order with original indices
+    s = sorted(potential_cities, key=lambda x: x[1], reverse=True)
+
+    # Roulette wheel selection
+    rand_val = random.random()
+    cumulative_prob = 0
+    for index, prob in s:
+        cumulative_prob += prob
+        if rand_val <= cumulative_prob:
+            return index
+
+    return s[0][0]  # Fallback
 
 
 def generate_path(pheromone_levels, visibility, alpha, beta):
-    pass
+    number_of_cities = len(pheromone_levels)
+    # current_node = random.randint(0, number_of_cities - 1)
+    current_node = 2
+    tabu_list = [current_node]
+
+    while len(tabu_list) < number_of_cities:
+        # Calculate denominator for current node to all unvisited cities
+        denominator = 0
+        for j in range(number_of_cities):
+            if j not in tabu_list:
+                denominator += (
+                    pheromone_levels[current_node][j] ** alpha
+                    * visibility[current_node][j] ** beta
+                )
+        if denominator == 0:
+            break
+
+        # Calculate probabilities ONLY for unvisited cities
+        potential_cities = []
+        for city in range(number_of_cities):
+            if city not in tabu_list:
+                numerator = (
+                    pheromone_levels[current_node][city] ** alpha
+                    * visibility[current_node][city] ** beta
+                )
+                probability = numerator / denominator
+                potential_cities.append([city, probability])
+
+        # Select next node using only unvisited cities
+        next_node = get_next_node(potential_cities)
+        tabu_list.append(next_node)
+        current_node = next_node
+    print(tabu_list)
+    return tabu_list
 
 
 # Add code here!
@@ -124,7 +174,6 @@ target_path_length = 99.9999999
 
 pheromone_levels = initialize_pheromone_levels(number_of_cities, tau_0)
 visibility = get_visibility(city_locations)
-print(visibility)
 
 #################################
 # Main loop:
@@ -156,3 +205,6 @@ path_length = math.inf
 #     # pheromone_levels = update_pheromone_levels(pheromone_levels, delta_pheromone_levels, rho) # Uncomment after writing the function
 
 # input(f"Press return to exit")
+generate_path(
+    pheromone_levels, visibility, alpha, beta
+)  # Uncomment after writing the function
