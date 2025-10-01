@@ -126,16 +126,18 @@ def get_path_length(path, city_locations):
 
 
 def compute_delta_pheromone_levels(path_collection, path_length_collection):
-    delta_pheromone_levels = [] 
-    total_pheremone = 0
+    number_of_cities = len(path_collection)
+    delta_pheromone_levels = np.zeros((number_of_cities, number_of_cities))
+
     for ant, path in enumerate(path_collection):
         path_length = path_length_collection[ant]
         pheremone_deposit = 1 / path_length
-        for i in range(len(path)-1):
+        for i in range(len(path) - 1):
             city_from = path[i]
-            next_city = path[i + 1]
-
-    return total_pheremone
+            city_to = path[i + 1]
+            delta_pheromone_levels[city_from][city_to] += pheremone_deposit
+    print(len(delta_pheromone_levels))
+    return delta_pheromone_levels
 
 
 # Add code here!
@@ -146,6 +148,13 @@ def compute_delta_pheromone_levels(path_collection, path_length_collection):
 
 
 def update_pheromone_levels(pheromone_levels, delta_pheromone_levels, rho):
+    for city_from, pheremone_value in enumerate(pheromone_levels):
+        for i in range(len(pheromone_levels-1)):
+            pheremone_value[city_from][i] += delta_pheromone_levels[city_from][i]
+
+            
+    
+
     pass
 
 
@@ -178,7 +187,7 @@ rho = 0.5  ## Changes allowed.
 tau_0 = 0.1  ## Changes allowed.
 
 # target_path_length = 99.9999999
-target_path_length = 120
+target_path_length = 120  # OWN TEST
 #################################
 # Initialization:
 #################################
@@ -222,7 +231,9 @@ while minimum_path_length > target_path_length:
     delta_pheromone_levels = compute_delta_pheromone_levels(
         path_collection, path_length_collection
     )  # Uncomment after writing the function
-    # pheromone_levels = update_pheromone_levels(pheromone_levels, delta_pheromone_levels, rho) # Uncomment after writing the function
+    pheromone_levels = update_pheromone_levels(
+        pheromone_levels, delta_pheromone_levels, rho
+    )  # Uncomment after writing the function
 
 # input(f"Press return to exit")
 
