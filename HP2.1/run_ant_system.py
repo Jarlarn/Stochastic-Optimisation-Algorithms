@@ -32,12 +32,11 @@ def get_visibility(city_locations):
     for i in range(number_of_cities):
         for j in range(number_of_cities):
             if i != j:
-                x1 = city_locations[j][0]
-                y1 = city_locations[j][1]
-                x2 = city_locations[i][0]
-                y2 = city_locations[i][1]
-                distance = np.sqrt((y2 - y1) ** 2 + (x2 - x1) ** 2)
+                x1, y1 = city_locations[j]
+                x2, y2 = city_locations[i]
+                distance = math.dist((x1, y1), (x2, y2))
                 visibility_matrix[i][j] = 1.0 / distance
+
             else:
                 visibility_matrix[i][j] = 0.0
     return visibility_matrix
@@ -98,11 +97,9 @@ def generate_path(pheromone_levels, visibility, alpha, beta):
         next_node = get_next_node(potential_cities)
         tabu_list.append(next_node)
         current_node = next_node
-    print(tabu_list)
-    return tabu_list
+    path = tabu_list
+    return path
 
-
-# Add code here!
 
 ###############################################################
 ## To do: Write the get_path_length function:
@@ -110,7 +107,15 @@ def generate_path(pheromone_levels, visibility, alpha, beta):
 
 
 def get_path_length(path, city_locations):
-    pass
+
+    path_length = 0
+    if len(path) < 2:
+        return path_length
+    for i in range(len(path) - 1):
+        x1, y1 = city_locations[path[i]]
+        x2, y2 = city_locations[path[i + 1]]
+        path_length += math.dist((x1, y1), (x2, y2))
+    return path_length
 
 
 # Add code here!
@@ -121,7 +126,16 @@ def get_path_length(path, city_locations):
 
 
 def compute_delta_pheromone_levels(path_collection, path_length_collection):
-    pass
+    delta_pheromone_levels = [] 
+    total_pheremone = 0
+    for ant, path in enumerate(path_collection):
+        path_length = path_length_collection[ant]
+        pheremone_deposit = 1 / path_length
+        for i in range(len(path)-1):
+            city_from = path[i]
+            next_city = path[i + 1]
+
+    return total_pheremone
 
 
 # Add code here!
@@ -163,8 +177,8 @@ beta = 5.0  ## Changes allowed.
 rho = 0.5  ## Changes allowed.
 tau_0 = 0.1  ## Changes allowed.
 
-target_path_length = 99.9999999
-
+# target_path_length = 99.9999999
+target_path_length = 120
 #################################
 # Initialization:
 #################################
@@ -184,27 +198,36 @@ minimum_path_length = math.inf
 path_length = math.inf
 
 
-# while minimum_path_length > target_path_length:
-#     iteration_index += 1
-#     path_collection = []
-#     path_length_collection = []
-#     for ant_index in range(number_of_ants):
-#         # Generate paths:
-#         # path = generate_path(pheromone_levels, visibility, alpha, beta) # Uncomment after writing the function
-#         # path_length = get_path_length(path, city_locations) # Uncomment after writing the function
-#         if path_length < minimum_path_length:
-#             minimum_path_length = path_length
-#             print(minimum_path_length)
+while minimum_path_length > target_path_length:
+    iteration_index += 1
+    path_collection = []
+    path_length_collection = []
+    for ant_index in range(number_of_ants):
+        # Generate paths:
+        path = generate_path(
+            pheromone_levels, visibility, alpha, beta
+        )  # Uncomment after writing the function
+        path_length = get_path_length(
+            path, city_locations
+        )  # Uncomment after writing the function
+        if path_length < minimum_path_length:
+            minimum_path_length = path_length
+            print(minimum_path_length)
 
-#             # To do: Add code for plotting here
+            # To do: Add code for plotting here
 
-#         path_collection.append(path)
-#         path_length_collection.append(path_length)
-#     # Update pheromone levels:
-#     # delta_pheromone_levels = compute_delta_pheromone_levels(path_collection,path_length_collection) # Uncomment after writing the function
-#     # pheromone_levels = update_pheromone_levels(pheromone_levels, delta_pheromone_levels, rho) # Uncomment after writing the function
+        path_collection.append(path)
+        path_length_collection.append(path_length)
+    # Update pheromone levels:
+    delta_pheromone_levels = compute_delta_pheromone_levels(
+        path_collection, path_length_collection
+    )  # Uncomment after writing the function
+    # pheromone_levels = update_pheromone_levels(pheromone_levels, delta_pheromone_levels, rho) # Uncomment after writing the function
 
 # input(f"Press return to exit")
-generate_path(
-    pheromone_levels, visibility, alpha, beta
-)  # Uncomment after writing the function
+
+# OWN TEST CODE
+# path = generate_path(pheromone_levels, visibility, alpha, beta)
+
+# get_path_length(path, city_locations)
+# # Uncomment after writing the function
