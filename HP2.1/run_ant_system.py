@@ -7,7 +7,7 @@
 import math
 import numpy as np
 
-# import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt
 import random
 
 
@@ -66,8 +66,7 @@ def get_next_node(potential_cities):
 
 def generate_path(pheromone_levels, visibility, alpha, beta):
     number_of_cities = len(pheromone_levels)
-    # current_node = random.randint(0, number_of_cities - 1)
-    current_node = 2
+    current_node = random.randint(0, number_of_cities - 1)
     tabu_list = [current_node]
 
     while len(tabu_list) < number_of_cities:
@@ -126,17 +125,16 @@ def get_path_length(path, city_locations):
 
 
 def compute_delta_pheromone_levels(path_collection, path_length_collection):
-    number_of_cities = len(path_collection)
+    number_of_cities = len(path_collection[0])
     delta_pheromone_levels = np.zeros((number_of_cities, number_of_cities))
 
     for ant, path in enumerate(path_collection):
         path_length = path_length_collection[ant]
-        pheremone_deposit = 1 / path_length
+        pheromone_deposit = 1 / path_length
         for i in range(len(path) - 1):
             city_from = path[i]
             city_to = path[i + 1]
-            delta_pheromone_levels[city_from][city_to] += pheremone_deposit
-    print(len(delta_pheromone_levels))
+            delta_pheromone_levels[city_from][city_to] += pheromone_deposit
     return delta_pheromone_levels
 
 
@@ -148,14 +146,10 @@ def compute_delta_pheromone_levels(path_collection, path_length_collection):
 
 
 def update_pheromone_levels(pheromone_levels, delta_pheromone_levels, rho):
-    for city_from, pheremone_value in enumerate(pheromone_levels):
-        for i in range(len(pheromone_levels-1)):
-            pheremone_value[city_from][i] += delta_pheromone_levels[city_from][i]
-
-            
-    
-
-    pass
+    tau_min = 1e-15
+    new_pheromone_levels = (1 - rho) * pheromone_levels + delta_pheromone_levels
+    np.maximum(new_pheromone_levels, tau_min, out=new_pheromone_levels)
+    return new_pheromone_levels
 
 
 # Add code here!
@@ -164,7 +158,35 @@ def update_pheromone_levels(pheromone_levels, delta_pheromone_levels, rho):
 #  Plots the cities (nodes):
 ##################################################
 
+
+def plot_cities(plt, city_locations):
+    # or use numpy if you prefer...
+    x = []
+    y = []
+    for city_index in range(len(city_locations)):
+        x.append(city_locations[city_index][0])
+        y.append(city_locations[city_index][1])
+    plt.scatter(x, y, zorder=1, color="yellow")
+
+
 # Add plot code here (can be more than one function)
+
+
+def plot_path(plt, path):
+
+    connections_x = []
+    connections_y = []
+    for index in path:
+        location_x = city_locations[index][0]
+        connections_x.append(location_x)
+        location_y = city_locations[index][1]
+        connections_y.append(location_y)
+    start_location_x = city_locations[path[0]][0]
+    start_location_y = city_locations[path[0]][1]
+    connections_x.append(start_location_x)
+    connections_y.append(start_location_y)
+    plt.plot(connections_x, connections_y, color="lime", zorder=0)
+
 
 #####################################
 # Main program:
@@ -186,14 +208,30 @@ beta = 5.0  ## Changes allowed.
 rho = 0.5  ## Changes allowed.
 tau_0 = 0.1  ## Changes allowed.
 
-# target_path_length = 99.9999999
-target_path_length = 120  # OWN TEST
+target_path_length = 99.9999999
 #################################
 # Initialization:
 #################################
 
-## To do: Add plot initialization here
+# Initialize interactive plotting
+plt.ion()  # Turn on interactive mode
+plt.figure(figsize=(10, 8))
 
+# Prepare plot
+plot_range = 20
+plt.xlim(0, plot_range)
+plt.ylim(0, plot_range)
+ax = plt.gca()
+ax.set_aspect("equal", adjustable="box")
+ax.set_facecolor("xkcd:black")
+
+# Initial plot of cities
+plot_cities(plt, city_locations)
+plt.title("Ant System TSP - Initialization")
+plt.xlabel("X Coordinate")
+plt.ylabel("Y Coordinate")
+plt.show()
+plt.pause(0.1)
 
 pheromone_levels = initialize_pheromone_levels(number_of_cities, tau_0)
 visibility = get_visibility(city_locations)
@@ -205,6 +243,7 @@ visibility = get_visibility(city_locations)
 iteration_index = 0
 minimum_path_length = math.inf
 path_length = math.inf
+best_path_history = []  # Track best path length over iterations
 
 
 while minimum_path_length > target_path_length:
@@ -219,11 +258,33 @@ while minimum_path_length > target_path_length:
         path_length = get_path_length(
             path, city_locations
         )  # Uncomment after writing the function
+
+        # Plot the figure:
         if path_length < minimum_path_length:
             minimum_path_length = path_length
             print(minimum_path_length)
 
-            # To do: Add code for plotting here
+            # Clear the plot and redraw with the new best path
+            plt.clf()
+            plt.xlim(0, plot_range)
+            plt.ylim(0, plot_range)
+            ax = plt.gca()
+            ax.set_aspect("equal", adjustable="box")
+            ax.set_facecolor("xkcd:black")
+
+            # Plot cities and the current best path
+            plot_cities(plt, city_locations)
+            plot_path(plt, path)
+
+            # Add title with current best path length
+            plt.title(
+                f"Ant System TSP - Best Path Length: {minimum_path_length:.2f}\nIteration: {iteration_index}"
+            )
+            plt.xlabel("X Coordinate")
+            plt.ylabel("Y Coordinate")
+
+            # Update the display
+            plt.pause(0.1)  # Small pause to allow plot to update
 
         path_collection.append(path)
         path_length_collection.append(path_length)
@@ -235,10 +296,34 @@ while minimum_path_length > target_path_length:
         pheromone_levels, delta_pheromone_levels, rho
     )  # Uncomment after writing the function
 
-# input(f"Press return to exit")
+    # Track best path length for convergence plot
+    best_path_history.append(minimum_path_length)
 
-# OWN TEST CODE
-# path = generate_path(pheromone_levels, visibility, alpha, beta)
+# Final plot with the best solution found
+plt.clf()
+plt.xlim(0, plot_range)
+plt.ylim(0, plot_range)
+ax = plt.gca()
+ax.set_aspect("equal", adjustable="box")
+ax.set_facecolor("xkcd:black")
 
-# get_path_length(path, city_locations)
-# # Uncomment after writing the function
+# Find the best path from the last iteration
+best_path_index = path_length_collection.index(min(path_length_collection))
+best_path = path_collection[best_path_index]
+
+plot_cities(plt, city_locations)
+plot_path(plt, best_path)
+plt.title(
+    f"Final Solution - Best Path Length: {minimum_path_length:.2f}\nTotal Iterations: {iteration_index}"
+)
+plt.xlabel("X Coordinate")
+plt.ylabel("Y Coordinate")
+plt.show()
+
+print(f"Optimization completed!")
+print(f"Best path length found: {minimum_path_length:.2f}")
+print(f"Total iterations: {iteration_index}")
+print(f"Target was: {target_path_length}")
+plt.savefig("ant_best_path.png", dpi=300, bbox_inches="tight")
+
+input(f"Press return to exit")
