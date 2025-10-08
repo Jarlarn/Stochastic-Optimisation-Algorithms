@@ -8,10 +8,10 @@ GRAVITY: Final = 9.80665
 GEAR_FACTORS: Final = (7.0, 5.0, 4.0, 3.0, 2.5, 2.0, 1.6, 1.4, 1.2, 1.0)
 
 # Truck model constants
-DEFAULT_TEMP_COOLING_TAU = 30.0  # tau time constant for cooling [s] (assignment)
-DEFAULT_TEMP_HEATING_CH = 40.0  # Ch heating coefficient [K/s] (assignment)
-DEFAULT_AMBIENT_TEMP = 283.0  # Ambient temperature [K] (assignment)
-DEFAULT_MAX_BRAKE_TEMP = 750.0  # Maximum allowable brake temp [K] (assignment)
+DEFAULT_TEMP_COOLING_TAU = 400.0  # tau time constant for cooling [s]
+DEFAULT_TEMP_HEATING_CH = 80.0  # Ch heating coefficient
+DEFAULT_AMBIENT_TEMP = 20.0  # Ambient temperature [°C]
+DEFAULT_MAX_BRAKE_TEMP = 750.0  # Maximum allowable brake temp [°C]
 DEFAULT_TIME_STEP = 0.1  # Default simulation time step [s]
 MAX_SIMULATION_STEPS = 100000  # Safety limit for simulation steps
 
@@ -96,11 +96,11 @@ class Truck:
         self.ambient_temp = float(ambient_temp)
 
         # State variables
-        self.delta_brake_temp = 0.0  # Temperature above ambient (ΔTb)
-        self.position = 0.0
-        self.velocity = 0.0
-        self.dt = dt
-        self.time = 0.0
+        self.delta_brake_temp = 0.0  # Temperature above ambient
+        self.position = 0.0  # Current position [m]
+        self.velocity = 0.0  # Current velocity [m/s]
+        self.dt = dt  # Time step for simulation [s]
+        self.time = 0.0  # Current simulation time [s]
 
     @property
     def mass(self) -> float:
@@ -132,22 +132,12 @@ class Truck:
         if self._gear > Gear.G1:
             self._gear = Gear(self._gear - 1)
 
-    def reset(
-        self,
-        position: float = 0.0,
-        velocity: float = 0.0,
-        gear: int = 1,
-        tb_total: float = None,
-    ) -> None:
-        """Reset truck to initial state. tb_total is absolute Tb in K; if None uses ambient."""
+    def reset(self, position: float = 0.0, velocity: float = 0.0) -> None:
+        """Reset truck to initial state"""
         self.position = position
         self.velocity = velocity
-        self._gear = Gear(gear) if isinstance(gear, int) else gear
-        if tb_total is None:
-            self.delta_brake_temp = 0.0
-        else:
-            # store ΔTb = Tb - Tamb, clamp >= 0
-            self.delta_brake_temp = max(0.0, float(tb_total) - self.ambient_temp)
+        self.delta_brake_temp = 0.0
+        self._gear = Gear.G1
         self.time = 0.0
 
     # Thin wrappers delegating to pure functions:
