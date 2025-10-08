@@ -6,6 +6,14 @@ from slopes import get_slope_angle
 GRAVITY: Final = 9.80665
 GEAR_FACTORS: Final = (7.0, 5.0, 4.0, 3.0, 2.5, 2.0, 1.6, 1.4, 1.2, 1.0)
 
+# Truck model constants
+DEFAULT_TEMP_COOLING_TAU = 400.0  # tau time constant for cooling [s]
+DEFAULT_TEMP_HEATING_CH = 80.0  # Ch heating coefficient
+DEFAULT_AMBIENT_TEMP = 20.0  # Ambient temperature [°C]
+DEFAULT_MAX_BRAKE_TEMP = 750.0  # Maximum allowable brake temp [°C]
+DEFAULT_TIME_STEP = 0.1  # Default simulation time step [s]
+MAX_SIMULATION_STEPS = 100000  # Safety limit for simulation steps
+
 
 class Gear(IntEnum):
     G1 = 1
