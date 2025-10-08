@@ -34,17 +34,19 @@ def main():
     ]
     for a, b in minima:
         plt.plot(a, b, "r*", markersize=10)
+        plt.text(
+            a + 0.15,
+            b + 0.15,
+            f"({a:.3f}, {b:.3f})",
+            fontsize=12,
+            color="red",
+            ha="left",
+            va="bottom",
+            bbox=dict(boxstyle="round,pad=0.2", fc="white", alpha=0.6, lw=0.3),
+        )
+
     plt.tight_layout()
-
-    # Optional 3D surface (uncomment to view)
-    # fig = plt.figure(figsize=(7, 6))
-    # ax = fig.add_subplot(111, projection="3d")
-    # ax.plot_surface(X, Y, Z, cmap="viridis", edgecolor="none", alpha=0.85)
-    # ax.set_title("Himmelblau Function Surface")
-    # ax.set_xlabel("x1")
-    # ax.set_ylabel("x2")
-    # ax.set_zlabel("f")
-
+    plt.savefig("HP2.2/contour.png", dpi=600, bbox_inches="tight")
     plt.show()
 
 
