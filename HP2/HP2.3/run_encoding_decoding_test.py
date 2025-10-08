@@ -18,7 +18,6 @@ import math
 
 def encode_network(w_ih, w_ho, w_max):
     chromosome = []
-    # Flatten w_ih then w_ho, scaling to [0,1]
     for row in w_ih:
         for w in row:
             chromosome.append((w + w_max) / (2 * w_max))
@@ -26,7 +25,6 @@ def encode_network(w_ih, w_ho, w_max):
         for w in row:
             chromosome.append((w + w_max) / (2 * w_max))
 
-    print(chromosome)
     return chromosome
 
 
@@ -47,8 +45,26 @@ def encode_network(w_ih, w_ho, w_max):
 
 
 def decode_chromosome(chromosome, n_i, n_h, n_o, w_max):
-    pass
-    # Add code here!
+    idx = 0
+    w_ih = []
+    for _ in range(n_h):
+        row = []
+        for _ in range(n_i + 1):
+            g = chromosome[idx]
+            idx += 1
+            row.append(g * 2 * w_max - w_max)
+        w_ih.append(row)
+
+    w_oh = []
+    for _ in range(n_o):
+        row = []
+        for _ in range(n_h + 1):
+            g = chromosome[idx]
+            idx += 1
+            row.append(g * 2 * w_max - w_max)
+        w_oh.append(row)
+
+    return w_ih, w_oh
 
 
 ############################################################
