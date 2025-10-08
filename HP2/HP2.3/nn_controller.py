@@ -1,9 +1,19 @@
 import numpy as np
+import math
 from typing import List, Tuple, Dict, Any, Optional, Callable
 from run_encoding_decoding_test import decode_chromosome
 
 # Default weight range used for encoding/decoding
 W_MAX = 5.0
+
+# Constants for truck control (matching assignment specs)
+V_MAX = 25.0  # m/s
+V_MIN = 1.0  # m/s
+ALPHA_MAX = 10.0  # degrees
+T_MAX = 750.0  # K
+
+# Sigmoid parameter c ∈ [1,3] as specified in the assignment
+SIGMOID_C = 2.0  # You can adjust this within the [1,3] range
 
 
 class NeuralNetworkController:
@@ -11,25 +21,28 @@ class NeuralNetworkController:
 
     def __init__(
         self,
-        ni: int,
-        nh: int,
-        no: int,
+        ni: int = 3,  # Changed to 3 inputs per assignment specs
+        nh: int = 6,
+        no: int = 2,  # Two outputs: brake pedal pressure and gear change
         chromosome: Optional[List[float]] = None,
         w_max: float = W_MAX,
+        sigmoid_c: float = SIGMOID_C,
     ):
         """
         Initialize a neural network controller.
 
         Args:
-            ni: Number of input neurons
+            ni: Number of input neurons (3: normalized velocity, slope, temperature)
             nh: Number of hidden neurons
-            no: Number of output neurons
+            no: Number of outputs (2: pedal pressure and gear change)
             chromosome: Optional chromosome to initialize weights
             w_max: Maximum absolute weight value for decoding
+            sigmoid_c: Sigmoid activation parameter c ∈ [1,3]
         """
         self.ni = ni
         self.nh = nh
         self.no = no
+        self.sigmoid_c = sigmoid_c
 
         # Initialize weights randomly or from chromosome
         if chromosome is not None:
@@ -41,9 +54,12 @@ class NeuralNetworkController:
 
     def activate(self, x: np.ndarray) -> np.ndarray:
         """
-        Sigmoid activation function
+        Sigmoid activation function with parameter c
+        f(x) = 1/(1+e^(-c*x))
         """
-        return 1.0 / (1.0 + np.exp(-x))
+        # Clip to prevent overflow
+        x_clipped = np.clip(x, -20.0 / self.sigmoid_c, 20.0 / self.sigmoid_c)
+        return 1.0 / (1.0 + np.exp(-self.sigmoid_c * x_clipped))
 
     def forward(self, inputs: List[float]) -> List[float]:
         """
@@ -88,54 +104,65 @@ class NeuralNetworkController:
         Args:
             position: Current position [m]
             velocity: Current velocity [m/s]
-            brake_temp: Current brake temperature [°C]
+            brake_temp: Current brake temperature [K]
             slope_angle: Current slope angle [degrees]
             gear: Current gear
 
         Returns:
-            Tuple of (brake_pedal_pressure, recommended_gear)
+            Tuple of (brake_pedal_pressure, gear_change)
+            where gear_change is -1 (down), 0 (no change), or 1 (up)
         """
-        # Normalize inputs to reasonable ranges
-        norm_velocity = velocity / 30.0  # Normalize to ~0-1 range for typical speeds
-        norm_brake_temp = brake_temp / 750.0  # Normalize to max temp
-        norm_slope = slope_angle / 20.0  # Normalize to typical max slope
-        norm_gear = gear / 10.0  # Normalize gear
+        # Normalize inputs as specified in assignment:
+        # v/vmax, α/αmax, Tb/Tmax
+        norm_velocity = velocity / V_MAX
+        norm_slope = slope_angle / ALPHA_MAX
+        norm_temp = brake_temp / T_MAX
 
-        # Feed inputs to neural network
-        nn_inputs = [norm_velocity, norm_brake_temp, norm_slope, norm_gear]
+        # Feed inputs to neural network (3 inputs as specified)
+        nn_inputs = [norm_velocity, norm_slope, norm_temp]
         nn_outputs = self.forward(nn_inputs)
 
         # Interpret outputs
-        brake_pedal = max(0.0, min(1.0, nn_outputs[0]))  # Clamp to [0,1]
+        # First output: brake pedal pressure [0,1]
+        brake_pedal = max(0.0, min(1.0, nn_outputs[0]))
 
-        # For gear control, map output to gear range
-        if self.no > 1:
-            gear_output = nn_outputs[1]
-            gear = int(round(gear_output * 9)) + 1  # Map [0,1] -> [1,10]
-            gear = max(1, min(10, gear))  # Ensure within valid range
+        # Second output: gear change
+        # Map to [-1, 0, 1] for (down, no change, up)
+        gear_out = nn_outputs[1]
+        # Threshold into 3 regions
+        if gear_out < 0.33:
+            gear_change = -1  # Down-shift
+        elif gear_out > 0.67:
+            gear_change = 1  # Up-shift
         else:
-            gear = None  # Use truck's default gear control
+            gear_change = 0  # No change
 
-        return brake_pedal, gear
+        return brake_pedal, gear_change
 
 
 def create_controller_from_chromosome(
-    chromosome: List[float], ni: int = 4, nh: int = 6, no: int = 2, w_max: float = W_MAX
+    chromosome: List[float],
+    ni: int = 3,  # Changed to 3 inputs
+    nh: int = 6,
+    no: int = 2,
+    w_max: float = W_MAX,
+    sigmoid_c: float = SIGMOID_C,
 ) -> Callable:
     """
     Create a controller function from a chromosome.
 
     Args:
         chromosome: List of weights
-        ni: Number of inputs (default 4: velocity, temp, slope, gear)
+        ni: Number of inputs (3: velocity, slope, temperature)
         nh: Number of hidden neurons
-        no: Number of outputs (default 2: brake pedal, gear)
+        no: Number of outputs (2: brake pedal, gear change)
         w_max: Maximum absolute weight value for decoding
+        sigmoid_c: Sigmoid activation parameter
 
     Returns:
         Controller function that takes truck state and returns control signals
     """
-    nn = NeuralNetworkController(ni, nh, no, chromosome, w_max)
+    nn = NeuralNetworkController(ni, nh, no, chromosome, w_max, sigmoid_c)
 
     def controller(position, velocity, brake_temp, slope_angle, gear):
         return nn.control(position, velocity, brake_temp, slope_angle, gear)
@@ -146,12 +173,12 @@ def create_controller_from_chromosome(
 def test_nn_controller():
     """Test the neural network controller"""
     # Create a random chromosome
-    ni, nh, no = 4, 6, 2
+    ni, nh, no = 3, 6, 2  # 3 inputs as specified
     w_i_h_size = nh * (ni + 1)
     w_h_o_size = no * (nh + 1)
     chromosome = np.random.uniform(
         0, 1, w_i_h_size + w_h_o_size
-    ).tolist()  # [0,1] range for chromosome
+    ).tolist()  # [0,1] range
 
     # Create controller
     nn = NeuralNetworkController(ni, nh, no, chromosome)
@@ -159,18 +186,19 @@ def test_nn_controller():
     # Test with some inputs
     position = 100.0
     velocity = 20.0
-    brake_temp = 300.0
+    brake_temp = 500.0
     slope_angle = 5.0
     gear = 3
 
-    pedal, recommended_gear = nn.control(
-        position, velocity, brake_temp, slope_angle, gear
-    )
+    pedal, gear_change = nn.control(position, velocity, brake_temp, slope_angle, gear)
 
     print(
         f"Test inputs: velocity={velocity}, brake_temp={brake_temp}, slope_angle={slope_angle}, gear={gear}"
     )
-    print(f"Control outputs: pedal={pedal:.3f}, recommended_gear={recommended_gear}")
+    print(f"Control outputs: pedal={pedal:.3f}, gear_change={gear_change}")
+    print(
+        f"Normalized inputs: v/vmax={velocity/V_MAX:.3f}, α/αmax={slope_angle/ALPHA_MAX:.3f}, Tb/Tmax={brake_temp/T_MAX:.3f}"
+    )
 
 
 if __name__ == "__main__":

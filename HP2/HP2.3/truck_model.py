@@ -86,6 +86,7 @@ class Truck:
         temp_heating_ch: float = DEFAULT_TEMP_HEATING_CH,
         ambient_temp: float = DEFAULT_AMBIENT_TEMP,
         dt: float = DEFAULT_TIME_STEP,
+        min_gear_shift_interval: float = 2.0,  # seconds: do not shift faster than this
     ):
         self._mass = float(mass)
         self.base_engine_brake_coeff = float(base_engine_brake_coeff)
@@ -94,6 +95,7 @@ class Truck:
         self.temp_cooling_tau = float(temp_cooling_tau)
         self.temp_heating_ch = float(temp_heating_ch)
         self.ambient_temp = float(ambient_temp)
+        self.min_gear_shift_interval = float(min_gear_shift_interval)
 
         # State variables
         self.delta_brake_temp = 0.0  # Temperature above ambient (ΔTb)
@@ -101,6 +103,9 @@ class Truck:
         self.velocity = 0.0
         self.dt = dt
         self.time = 0.0
+        # track when the last gear change occurred (seconds)
+        # initialize so a first change at time 0 is permitted
+        self.last_gear_change_time = -self.min_gear_shift_interval
 
     @property
     def mass(self) -> float:
@@ -122,7 +127,19 @@ class Truck:
             gear = Gear(gear)
         elif not isinstance(gear, Gear):
             raise TypeError("gear must be int or Gear")
+
+        # No-op if same gear
+        if gear == self._gear:
+            return
+
+        # Enforce minimum interval between gear shifts
+        if (self.time - self.last_gear_change_time) < self.min_gear_shift_interval:
+            # Too soon to change gear; ignore request
+            return
+
+        # Accept gear change
         self._gear = gear
+        self.last_gear_change_time = self.time
 
     def shift_up(self) -> None:
         if self._gear < Gear.G10:
@@ -149,6 +166,8 @@ class Truck:
             # store ΔTb = Tb - Tamb, clamp >= 0
             self.delta_brake_temp = max(0.0, float(tb_total) - self.ambient_temp)
         self.time = 0.0
+        # mark last gear change at reset time so next shift must wait min interval
+        self.last_gear_change_time = self.time
 
     # Thin wrappers delegating to pure functions:
     def current_engine_brake(self) -> float:
@@ -269,14 +288,14 @@ class Truck:
 
             # Unpack control
             if isinstance(control_inputs, tuple) and len(control_inputs) >= 2:
-                pedal, gear = control_inputs[0], control_inputs[1]
+                pedal, gear_change = control_inputs[0], control_inputs[1]
             else:
                 pedal = float(control_inputs)
-                gear = None
+                gear_change = 0  # No change
 
             # Apply gear control if provided and not using auto gear
-            if gear is not None and not auto_gear:
-                self.set_gear(gear)
+            if gear_change is not None and not auto_gear:
+                self.apply_gear_change(gear_change)
             elif auto_gear:
                 self.set_gear(select_gear_by_speed(self.velocity))
 
@@ -297,6 +316,29 @@ class Truck:
             step_count += 1
 
         return history
+
+    def apply_gear_change(self, gear_change: int) -> None:
+        """
+        Apply a gear change request from the controller.
+
+        Args:
+            gear_change: -1 (down), 0 (no change), 1 (up)
+        """
+        if gear_change == 0:
+            return  # No change requested
+
+        # Enforce minimum interval between gear shifts
+        if (self.time - self.last_gear_change_time) < self.min_gear_shift_interval:
+            # Too soon to change gear; ignore request
+            return
+
+        # Apply the requested change
+        if gear_change > 0 and self._gear.value < 10:  # Shift up
+            self._gear = Gear(self._gear.value + 1)
+            self.last_gear_change_time = self.time
+        elif gear_change < 0 and self._gear.value > 1:  # Shift down
+            self._gear = Gear(self._gear.value - 1)
+            self.last_gear_change_time = self.time
 
 
 def demo():

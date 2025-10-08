@@ -7,7 +7,7 @@ from typing import List, Dict, Tuple, Callable, Any, Optional
 import matplotlib.pyplot as plt
 
 from truck_model import Truck
-from nn_controller import create_controller_from_chromosome
+from nn_controller import create_controller_from_chromosome, SIGMOID_C
 
 # Type aliases
 Population = List[List[float]]
@@ -274,12 +274,12 @@ def create_fitness_function(
     truck_params: Dict = None,
     slope_indices: List[int] = [0, 1],
     data_set_indices: List[int] = [0],
-    ni: int = 4,
+    ni: int = 3,  # Changed to 3 inputs per spec
     nh: int = 6,
     no: int = 2,
-    max_distance: float = 5000.0,
-    penalty_weight_speed: float = 1.0,
-    penalty_weight_temp: float = 5.0,
+    max_distance: float = 1000.0,  # Changed to 1000m per spec
+    v_max: float = 25.0,
+    v_min: float = 1.0,
 ) -> FitnessFunction:
     """
     Create a fitness function for evaluating truck controllers
@@ -289,9 +289,9 @@ def create_fitness_function(
         slope_indices: List of slope profiles to test on
         data_set_indices: List of data sets to test on
         ni, nh, no: Neural network dimensions
-        max_distance: Maximum distance for simulations
-        penalty_weight_speed: Weight for speed penalty
-        penalty_weight_temp: Weight for temperature penalty
+        max_distance: Maximum distance for simulations (1000m)
+        v_max: Maximum allowed velocity
+        v_min: Minimum allowed velocity
 
     Returns:
         Fitness function that evaluates a chromosome
@@ -300,8 +300,11 @@ def create_fitness_function(
     if truck_params is None:
         truck_params = {
             "mass": 20000.0,  # kg
-            "base_engine_brake_coeff": 2000.0,  # base engine brake force coefficient
-            "max_brake_temp": 750.0,  # maximum allowable temperature
+            "base_engine_brake_coeff": 3000.0,  # Cb = 3000 N per spec
+            "max_brake_temp": 750.0,  # Tmax = 750 K per spec
+            "temp_cooling_tau": 30.0,  # tau = 30s per spec
+            "temp_heating_ch": 40.0,  # Ch = 40 K/s per spec
+            "ambient_temp": 283.0,  # Tamb = 283 K per spec
         }
 
     def fitness_function(chromosome: List[float]) -> float:
@@ -317,8 +320,9 @@ def create_fitness_function(
 
         for slope_idx in slope_indices:
             for dataset_idx in data_set_indices:
-                # Reset truck state
-                truck.reset()
+                # Reset truck with starting conditions from assignment:
+                # x = 0, v = 20 m/s, gear = 7, Tb = 500 K
+                truck.reset(position=0.0, velocity=20.0, gear=7, tb_total=500.0)
 
                 # Simulate descent
                 try:
@@ -327,45 +331,33 @@ def create_fitness_function(
                         slope_index=slope_idx,
                         data_set_index=dataset_idx,
                         max_distance=max_distance,
-                        auto_gear=(no < 2),  # Use auto gear if NN doesn't output gear
+                        auto_gear=False,  # Use NN's gear change
                     )
 
                     # Extract metrics for fitness calculation
+                    final_velocity = history["velocity"][-1]
                     max_velocity = max(history["velocity"])
+                    min_velocity = min(history["velocity"])
                     max_brake_temp = max(history["brake_temp"])
                     avg_velocity = sum(history["velocity"]) / len(history["velocity"])
                     distance = history["position"][-1]
 
-                    # Calculate penalties
-                    speed_penalty = (
-                        max(0, max_velocity - 25.0) ** 2
-                    )  # Penalize speeds > 25 m/s
-                    temp_penalty = (
-                        max(0, max_brake_temp - truck_params["max_brake_temp"] + 50)
-                        ** 2
-                    )  # Start penalty before max temp
-
-                    # Calculate fitness components
-                    distance_score = (
-                        distance / max_distance
-                    )  # 0-1 score for distance traveled
-                    completion_bonus = (
-                        1.0 if distance >= max_distance else 0.0
-                    )  # Bonus for completing route
-                    speed_score = max(
-                        0, 1.0 - speed_penalty * penalty_weight_speed / 100.0
-                    )  # Speed control score
-                    temp_score = max(
-                        0, 1.0 - temp_penalty * penalty_weight_temp / 10000.0
-                    )  # Temperature control score
-
-                    # Combine scores
-                    scenario_fitness = (
-                        0.3 * distance_score
-                        + 0.2 * completion_bonus
-                        + 0.25 * speed_score
-                        + 0.25 * temp_score
+                    # Check if constraints were violated
+                    constraints_violated = (
+                        max_velocity > v_max
+                        or min_velocity < v_min
+                        or max_brake_temp > truck_params["max_brake_temp"]
                     )
+
+                    # Simple fitness according to spec: F = v*d
+                    # If constraints violated, use actual distance traveled
+                    # If completed without violations, use full distance
+                    scenario_fitness = avg_velocity * distance
+
+                    # Add penalty if constraints violated (optional)
+                    if constraints_violated:
+                        # Scale down fitness significantly when constraints are violated
+                        scenario_fitness *= 0.5
 
                     # Add to total fitness
                     total_fitness += scenario_fitness
@@ -381,6 +373,7 @@ def create_fitness_function(
 
 
 def run_optimization():
+    """Run the optimization process using the parameters from the assignment"""
     # Assignment parameters
     Tmax = 750.0  # K
     M = 20000.0  # kg
@@ -392,93 +385,137 @@ def run_optimization():
     vmin = 1.0  # m/s
     alpha_max = 10.0  # degrees
 
-    # NN settings
-    ni, nh, no = 4, 6, 2  # you can change nh as desired
+    # Neural network configuration
+    ni = 3  # Normalized inputs: v/vmax, α/αmax, Tb/Tmax
+    nh = 6  # Hidden neurons (you may adjust this between 3-10)
+    no = 2  # Two outputs: brake_pedal, gear_change
 
-    # Create fitness function factory: we evaluate F_tr and F_val inside training loop
+    # Truck parameters
+    truck_params = {
+        "mass": M,
+        "base_engine_brake_coeff": Cb,
+        "max_brake_temp": Tmax,
+        "temp_cooling_tau": tau,
+        "temp_heating_ch": Ch,
+        "ambient_temp": Tamb,
+    }
+
+    # Create fitness functions for training and validation
     fitness_tr = create_fitness_function(
-        truck_params={
-            "mass": M,
-            "base_engine_brake_coeff": Cb,
-            "max_brake_temp": Tmax,
-            "temp_cooling_tau": tau,
-            "temp_heating_ch": Ch,
-            "ambient_temp": Tamb,
-        },
-        slope_indices=[0, 1],
-        data_set_indices=[1],
+        truck_params=truck_params,
+        slope_indices=list(range(1, 11)),  # Slopes 1-10
+        data_set_indices=[1],  # Training set
         ni=ni,
         nh=nh,
         no=no,
-        max_distance=5000.0,
-    )
-    fitness_val = create_fitness_function(
-        truck_params={
-            "mass": M,
-            "base_engine_brake_coeff": Cb,
-            "max_brake_temp": Tmax,
-            "temp_cooling_tau": tau,
-            "temp_heating_ch": Ch,
-            "ambient_temp": Tamb,
-        },
-        slope_indices=[2, 3],
-        data_set_indices=[2],
-        ni=ni,
-        nh=nh,
-        no=no,
-        max_distance=5000.0,
+        max_distance=1000.0,
+        v_max=vmax,
+        v_min=vmin,
     )
 
-    # GA settings
+    fitness_val = create_fitness_function(
+        truck_params=truck_params,
+        slope_indices=list(range(1, 6)),  # Slopes 1-5
+        data_set_indices=[2],  # Validation set
+        ni=ni,
+        nh=nh,
+        no=no,
+        max_distance=1000.0,
+        v_max=vmax,
+        v_min=vmin,
+    )
+
+    # GA parameters
     ga = GeneticAlgorithm(
-        pop_size=60,
+        pop_size=100,
         ni=ni,
         nh=nh,
         no=no,
         mutation_rate=0.05,
         crossover_rate=0.8,
+        selection_pressure=1.5,
         elitism=2,
         seed=42,
     )
 
-    # Holdout early stopping parameters
-    patience = 20
-    best_val = -float("inf")
-    best_chromosome = None
-    no_improve = 0
+    # Run optimization with early stopping based on validation fitness
     max_generations = 200
+    patience = 20
+    best_val_fitness = float("-inf")
+    best_chromosome = None
+    no_improvement = 0
+
+    print("Starting optimization...")
+    print("Generation | Training Fitness | Validation Fitness")
 
     for gen in range(max_generations):
-        # Use GA internals to perform one generation: evaluate, selection, produce next population
-        # Here we call evolve for one generation by reusing evaluate and reproduction logic
-        # Simpler: run evolve with generations=1 repeatedly while checking validation
-        ga.evolve(fitness_tr, generations=1, verbose=False)
+        # Evolve for one generation using training fitness
+        ga.evolve(fitness_fn=fitness_tr, generations=1, verbose=False)
 
-        # evaluate best on validation
-        if ga.best_individual is None:
-            continue
-        val_score = fitness_val(ga.best_individual)
+        # Evaluate best chromosome on validation set
+        val_fitness = fitness_val(ga.best_individual)
 
-        print(f"Gen {gen}: Tr_best={ga.best_fitness:.6f}  Val={val_score:.6f}")
+        print(f"{gen:10d} | {ga.best_fitness:16.6f} | {val_fitness:18.6f}")
 
-        if val_score > best_val:
-            best_val = val_score
+        # Check for improvement
+        if val_fitness > best_val_fitness:
+            best_val_fitness = val_fitness
             best_chromosome = ga.best_individual.copy()
-            no_improve = 0
-            # save best to python file immediately
-            with open("best_chromosome.py", "w") as f:
-                f.write("# Auto-saved best chromosome\n")
-                f.write("CHROMOSOME = " + repr(best_chromosome) + "\n")
-                f.write(f"NI = {ni}\nNH = {nh}\nNO = {no}\n")
-        else:
-            no_improve += 1
-            if no_improve >= patience:
-                print("Early stopping (no validation improvement).")
-                break
+            no_improvement = 0
 
-    print("Finished. Best validation score:", best_val)
-    ga.plot_fitness_history(save_path="fitness_history.png")
-    ga.save_best(filename="best_chromosome.json")
+            # Save best chromosome as Python file
+            with open("best_chromosome.py", "w") as f:
+                f.write("# Best chromosome found through GA optimization\n")
+                f.write(f"CHROMOSOME = {best_chromosome}\n")
+                f.write(f"NI = {ni}  # Number of inputs\n")
+                f.write(f"NH = {nh}  # Number of hidden neurons\n")
+                f.write(f"NO = {no}  # Number of outputs\n")
+                f.write(f"SIGMOID_C = {SIGMOID_C}  # Sigmoid parameter c\n")
+        else:
+            no_improvement += 1
+
+        # Early stopping
+        if no_improvement >= patience:
+            print(
+                f"Early stopping after {gen} generations (no improvement for {patience} generations)"
+            )
+            break
+
+    print("\nOptimization completed!")
+    print(f"Best validation fitness: {best_val_fitness:.6f}")
+
+    # Also save as JSON for test program
+    import json
+
+    with open("best_chromosome.json", "w") as f:
+        json.dump(
+            {
+                "chromosome": best_chromosome,
+                "ni": ni,
+                "nh": nh,
+                "no": no,
+                "sigmoid_c": SIGMOID_C,
+                "fitness": best_val_fitness,
+            },
+            f,
+            indent=2,
+        )
+
+    print("Best chromosome saved to best_chromosome.py and best_chromosome.json")
+
+    # Plot fitness history if available
+    if hasattr(ga, "best_fitness_history") and len(ga.best_fitness_history) > 0:
+        import matplotlib.pyplot as plt
+
+        plt.figure(figsize=(10, 6))
+        plt.plot(ga.best_fitness_history, label="Training Fitness")
+        plt.xlabel("Generation")
+        plt.ylabel("Fitness")
+        plt.title("Fitness History")
+        plt.legend()
+        plt.grid(True)
+        plt.savefig("fitness_history.png")
+        plt.show()
 
 
 if __name__ == "__main__":
