@@ -1,0 +1,27 @@
+[MASTER]
+ignore=venv
+
+[MESSAGES CONTROL]
+disable=
+    missing-module-docstring,
+    missing-class-docstring,
+    missing-function-docstring,
+    too-few-public-methods,
+    invalid-name,
+    line-too-long,
+    too-many-arguments,
+    too-many-instance-attributes,
+    too-many-locals,
+    duplicate-code,
+    # Type-related / inference issues:
+    no-member,
+    unsupported-assignment-operation,
+    unsubscriptable-object,
+    assignment-from-no-return,
+    not-callable,
+    no-value-for-parameter,
+    too-many-function-args,
+    redundant-keyword-arg
+
+[FORMAT]
+max-line-length=120
