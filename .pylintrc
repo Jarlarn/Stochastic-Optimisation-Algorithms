@@ -22,6 +22,6 @@ disable=
     no-value-for-parameter,
     too-many-function-args,
     redundant-keyword-arg
-
+    import-error
 [FORMAT]
 max-line-length=120

@@ -16,46 +16,53 @@ import math
 # as long as they fulfil the criteria given in HP2.3.
 #
 # You may remove the comments above and below, as they
-# (or at least some of them) violate the coding standard 
+# (or at least some of them) violate the coding standard
 #  a bit. :)
-# The comments have been added as a clarification of the 
+# The comments have been added as a clarification of the
 # problem that should be solved!).
 
 
-def get_slope_angle(x, slope_index, data_set_index):   
+def get_slope_angle(x, slope_index, data_set_index):
 
-  if (data_set_index == 1): # Training
-    if (slope_index == 1):
-      alpha = 4 + math.sin(x/100) + math.cos(math.sqrt(2)*x/50) # You may modify this!
+    if data_set_index == 1:  # Training
+        if slope_index == 1:
+            alpha = (
+                4 + math.sin(x / 100) + math.cos(math.sqrt(2) * x / 50)
+            )  # You may modify this!
 
- #
- # Here, insert the next 8 training set slopes (defined by you)
- #
+        #
+        # Here, insert the next 8 training set slopes (defined by you)
+        #
 
-    elif (slope_index == 10):
-     alpha = 3 + 2*math.sin(x/50) + math.cos(math.sqrt(2)*x/100);  # You may modify this!
+        elif slope_index == 10:
+            alpha = 3 + 2 * math.sin(x / 50) + math.cos(math.sqrt(2) * x / 100)
+            # You may modify this!
 
-  elif (data_set_index == 2): # Validation
-    if (slope_index == 1):
-      alpha = 6 - math.sin(x/100) + math.cos(math.sqrt(3)*x/50)
+    elif data_set_index == 2:  # Validation
+        if slope_index == 1:
+            alpha = 6 - math.sin(x / 100) + math.cos(math.sqrt(3) * x / 50)
 
- #
- # Here, insert the next 3 validation set slopes (defined by you)
- #
-  
-    elif (slope_index == 5):
-      alpha = 5 + math.sin(x/50) + math.cos(math.sqrt(5)*x/50);   # You may modify this!
+        #
+        # Here, insert the next 3 validation set slopes (defined by you)
+        #
 
+        elif slope_index == 5:
+            alpha = 5 + math.sin(x / 50) + math.cos(math.sqrt(5) * x / 50)
+            # You may modify this!
 
-  elif (data_set_index == 3): # Test
-    if (slope_index == 1):
-      alpha = 6 - math.sin(x/100) + math.cos(math.sqrt(7)*x/50)   # You may modify this!
+    elif data_set_index == 3:  # Test
+        if slope_index == 1:
+            alpha = (
+                6 - math.sin(x / 100) + math.cos(math.sqrt(7) * x / 50)
+            )  # You may modify this!
 
- #
- # Here, insert the next 3 test set slopes (defined by you)
- #
+        #
+        # Here, insert the next 3 test set slopes (defined by you)
+        #
 
-    elif (slope_index == 5):
-      alpha = 4 + (x/1000) + math.sin(x/70) + math.cos(math.sqrt(7)*x/100) # You may modify this!
+        elif slope_index == 5:
+            alpha = (
+                4 + (x / 1000) + math.sin(x / 70) + math.cos(math.sqrt(7) * x / 100)
+            )  # You may modify this!
 
-  return alpha
+    return alpha
