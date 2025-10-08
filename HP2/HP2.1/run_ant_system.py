@@ -337,6 +337,6 @@ print(f"Optimization completed!")
 print(f"Best path length found: {minimum_path_length:.2f}")
 print(f"Total iterations: {iteration_index}")
 print(f"Target was: {target_path_length}")
-plt.savefig("HP2.1/ant_best_path.png", dpi=300, bbox_inches="tight")
+plt.savefig("HP2/HP2.1/ant_best_path.png", dpi=300, bbox_inches="tight")
 
 input(f"Press return to exit")

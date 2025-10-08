@@ -46,7 +46,7 @@ def main():
         )
 
     plt.tight_layout()
-    plt.savefig("HP2.2/contour.png", dpi=600, bbox_inches="tight")
+    plt.savefig("HP2/HP2.2/contour.png", dpi=600, bbox_inches="tight")
     plt.show()
 
 
