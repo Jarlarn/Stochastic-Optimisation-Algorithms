@@ -106,14 +106,18 @@ def generate_path(pheromone_levels, visibility, alpha, beta):
 
 
 def get_path_length(path, city_locations):
-
-    path_length = 0
+    # Sum distances between consecutive cities and add distance from last back to first
     if len(path) < 2:
-        return path_length
+        return 0.0
+    path_length = 0.0
     for i in range(len(path) - 1):
         x1, y1 = city_locations[path[i]]
         x2, y2 = city_locations[path[i + 1]]
         path_length += math.dist((x1, y1), (x2, y2))
+    # closing edge (tour return)
+    x_first, y_first = city_locations[path[0]]
+    x_last, y_last = city_locations[path[-1]]
+    path_length += math.dist((x_last, y_last), (x_first, y_first))
     return path_length
 
 
@@ -127,14 +131,19 @@ def get_path_length(path, city_locations):
 def compute_delta_pheromone_levels(path_collection, path_length_collection):
     number_of_cities = len(path_collection[0])
     delta_pheromone_levels = np.zeros((number_of_cities, number_of_cities))
-
     for ant, path in enumerate(path_collection):
-        path_length = path_length_collection[ant]
-        pheromone_deposit = 1 / path_length
+        L = path_length_collection[ant]
+        if L == 0:
+            continue
+        deposit = 1.0 / L
         for i in range(len(path) - 1):
-            city_from = path[i]
-            city_to = path[i + 1]
-            delta_pheromone_levels[city_from][city_to] += pheromone_deposit
+            a = path[i]
+            b = path[i + 1]
+            delta_pheromone_levels[a][b] += deposit
+        # Add pheromone for closing edge to keep consistency with tour length
+        a = path[-1]
+        b = path[0]
+        delta_pheromone_levels[a][b] += deposit
     return delta_pheromone_levels
 
 
@@ -284,7 +293,7 @@ while minimum_path_length > target_path_length:
             plt.ylabel("Y Coordinate")
 
             # Update the display
-            plt.pause(0.1)  # Small pause to allow plot to update
+            plt.pause(0.1)
 
         path_collection.append(path)
         path_length_collection.append(path_length)
@@ -320,10 +329,14 @@ plt.xlabel("X Coordinate")
 plt.ylabel("Y Coordinate")
 plt.show()
 
+with open("HP2.1/best_path.py", "w", encoding="utf-8") as f:
+    f.write(f"best_path = {best_path}\n")
+    f.write(f"best_path_length = {minimum_path_length:.6f}\n")
+
 print(f"Optimization completed!")
 print(f"Best path length found: {minimum_path_length:.2f}")
 print(f"Total iterations: {iteration_index}")
 print(f"Target was: {target_path_length}")
-plt.savefig("ant_best_path.png", dpi=300, bbox_inches="tight")
+plt.savefig("HP2.1/ant_best_path.png", dpi=300, bbox_inches="tight")
 
 input(f"Press return to exit")
