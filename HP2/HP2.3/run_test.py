@@ -89,8 +89,14 @@ def test_controller(
 ) -> Dict[str, List[float]]:
     """Test a controller on a specific slope and data set"""
     # Create truck and controller
-    truck = Truck(mass=20000.0, base_engine_brake_coeff=2000.0, max_brake_temp=750.0)
+    truck = Truck(
+        mass=20000.0, base_engine_brake_coeff=3000.0, max_brake_temp=750.0
+    )  # Fixed Cb value
     controller = create_controller_from_chromosome(chromosome, ni, nh, no)
+
+    truck.reset(
+        position=0.0, velocity=20.0, gear=7, tb_total=500.0
+    )  # Set initial state
 
     # Run simulation
     history = truck.simulate(
@@ -162,12 +168,11 @@ def main():
             return
 
     # Test parameters from assignment
-    Tmax = 750.0  # K
-    M = 20000.0  # kg
-    tau = 30.0  # s
-    Ch = 40.0  # K/s
-    Tamb = 283.0  # K
-    Cb = 3000.0  # N (engine brake base coeff)
+    truck = Truck(
+        mass=20000.0,  # 20000 kg
+        base_engine_brake_coeff=3000.0,  # Was 2000.0, should be 3000.0
+        max_brake_temp=750.0,
+    )
 
     # Test on all test set slopes
     print("\nRunning tests on test set slopes...")

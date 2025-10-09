@@ -97,6 +97,7 @@ class NeuralNetworkController:
         brake_temp: float,
         slope_angle: float,
         gear: int,
+        current_time: float,  # New parameter for current time
     ) -> Tuple[float, int]:
         """
         Control function interface for use with truck simulation.
@@ -107,6 +108,7 @@ class NeuralNetworkController:
             brake_temp: Current brake temperature [K]
             slope_angle: Current slope angle [degrees]
             gear: Current gear
+            current_time: Current time [s] - new parameter for time-based control
 
         Returns:
             Tuple of (brake_pedal_pressure, gear_change)
@@ -137,6 +139,18 @@ class NeuralNetworkController:
         else:
             gear_change = 0  # No change
 
+        # Add current_time parameter and tracking of last_gear_change_time
+        if not hasattr(self, "last_gear_change_time"):
+            self.last_gear_change_time = -float("inf")
+
+        # Apply time constraint to gear changes
+        if current_time - self.last_gear_change_time < 2.0:  # 2 second minimum
+            gear_change = 0  # Force no change if not enough time passed
+        else:
+            # Only update the time if we're actually changing gears
+            if gear_change != 0:
+                self.last_gear_change_time = current_time
+
         return brake_pedal, gear_change
 
 
@@ -164,8 +178,10 @@ def create_controller_from_chromosome(
     """
     nn = NeuralNetworkController(ni, nh, no, chromosome, w_max, sigmoid_c)
 
-    def controller(position, velocity, brake_temp, slope_angle, gear):
-        return nn.control(position, velocity, brake_temp, slope_angle, gear)
+    def controller(position, velocity, brake_temp, slope_angle, gear, current_time):
+        return nn.control(
+            position, velocity, brake_temp, slope_angle, gear, current_time
+        )
 
     return controller
 
@@ -189,8 +205,11 @@ def test_nn_controller():
     brake_temp = 500.0
     slope_angle = 5.0
     gear = 3
+    current_time = 0.0  # Starting time
 
-    pedal, gear_change = nn.control(position, velocity, brake_temp, slope_angle, gear)
+    pedal, gear_change = nn.control(
+        position, velocity, brake_temp, slope_angle, gear, current_time
+    )
 
     print(
         f"Test inputs: velocity={velocity}, brake_temp={brake_temp}, slope_angle={slope_angle}, gear={gear}"

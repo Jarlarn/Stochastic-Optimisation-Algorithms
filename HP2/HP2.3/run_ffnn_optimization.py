@@ -29,6 +29,7 @@ class GeneticAlgorithm:
         selection_pressure: float = 1.5,
         elitism: int = 1,
         seed: int = None,
+        tournament_size: int = 3,  # NEW: tournament size for selection
     ):
         """
         Initialize the GA optimizer.
@@ -62,6 +63,8 @@ class GeneticAlgorithm:
         self.crossover_rate = crossover_rate
         self.selection_pressure = selection_pressure
         self.elitism = elitism
+        self.tournament_size = tournament_size
+        self.tournament_probability = 0.75
 
         # Set random seed
         if seed is not None:
@@ -78,11 +81,13 @@ class GeneticAlgorithm:
         self.best_fitness = -float("inf")
 
     def _init_population(self) -> Population:
-        """Initialize random population"""
-        return [
-            np.random.uniform(-1.0, 1.0, self.chromosome_length).tolist()
-            for _ in range(self.pop_size)
-        ]
+        """Initialize random population with values in [0.0, 1.0]"""
+        population = []
+        for _ in range(self.pop_size):
+            # Initialize genes in [0,1] as expected by decode_chromosome
+            chromosome = np.random.uniform(0.0, 1.0, self.chromosome_length).tolist()
+            population.append(chromosome)
+        return population
 
     def _evaluate_population(
         self, fitness_fn: FitnessFunction
@@ -109,26 +114,33 @@ class GeneticAlgorithm:
 
     def _selection(self, evaluated_pop: List[Tuple[List[float], float]]) -> List[float]:
         """
-        Rank-based selection
+        Probabilistic tournament selection:
+        - sample k contestants from evaluated_pop
+        - sort them by fitness descending
+        - choose the i-th best with probability p*(1-p)**i (try best first with prob p)
+        - if none selected (unlikely), return the worst of the contestants
         """
-        # Extract individuals
-        individuals = [ind for ind, _ in evaluated_pop]
+        if not evaluated_pop:
+            return []
 
-        # Calculate selection probabilities based on rank
-        n = len(individuals)
-        ranks = np.arange(n, 0, -1)  # n, n-1, ..., 1
+        n = len(evaluated_pop)
+        k = max(1, min(self.tournament_size, n))
 
-        # Linear ranking probabilities
-        selection_probs = (2 - self.selection_pressure) / n + 2 * ranks * (
-            self.selection_pressure - 1
-        ) / (n * (n - 1))
+        # Sample k distinct competitors (tuples of (individual, fitness))
+        competitors = random.sample(evaluated_pop, k)
 
-        # Normalize probabilities
-        selection_probs = selection_probs / np.sum(selection_probs)
+        # Sort competitors by fitness descending (best first)
+        competitors.sort(key=lambda t: t[1], reverse=True)
 
-        # Select an individual based on probabilities
-        idx = np.random.choice(n, p=selection_probs)
-        return individuals[idx].copy()
+        p = getattr(self, "tournament_probability", 0.75)
+        # Probabilistic pick: try best, then second-best, ...
+        for ind, fit in competitors:
+            if random.random() < p:
+                return ind.copy()
+            # if not picked, reduce effective pick chance for next by multiplying (1-p)
+            # (implementation: loop continues so next has same p but conditioned on previous fails)
+        # Fallback: return worst competitor if nobody sampled
+        return competitors[-1][0].copy()
 
     def _crossover(
         self, parent1: List[float], parent2: List[float]
@@ -151,16 +163,14 @@ class GeneticAlgorithm:
             return parent1.copy(), parent2.copy()
 
     def _mutate(self, individual: List[float]) -> List[float]:
-        """
-        Perform mutation on an individual
-        """
+        """Perform mutation on an individual"""
         mutated = individual.copy()
         for i in range(len(mutated)):
             if random.random() < self.mutation_rate:
                 # Gaussian mutation
-                mutated[i] += random.gauss(0, 0.2)
-                # Clamp values to reasonable range
-                mutated[i] = max(-3.0, min(3.0, mutated[i]))
+                mutated[i] += random.gauss(0, 0.1)  # Smaller std dev
+                # Clamp values to [0,1] range for proper decoding
+                mutated[i] = max(0.0, min(1.0, mutated[i]))
         return mutated
 
     def evolve(
@@ -230,6 +240,7 @@ class GeneticAlgorithm:
                     new_population.append(child2)
 
             # Replace old population
+
             self.population = new_population
 
         return self.best_individual, self.best_fitness
@@ -271,103 +282,55 @@ class GeneticAlgorithm:
 
 
 def create_fitness_function(
-    truck_params: Dict = None,
-    slope_indices: List[int] = [0, 1],
-    data_set_indices: List[int] = [0],
-    ni: int = 3,  # Changed to 3 inputs per spec
-    nh: int = 6,
-    no: int = 2,
-    max_distance: float = 1000.0,  # Changed to 1000m per spec
-    v_max: float = 25.0,
-    v_min: float = 1.0,
-) -> FitnessFunction:
-    """
-    Create a fitness function for evaluating truck controllers
+    truck_params, slopes, v_min=1.0, v_max=25.0, max_distance=10000.0
+):
+    def fitness_function(chromosome):
+        # Create neural network controller from chromosome
+        controller = create_controller_from_chromosome(chromosome)
 
-    Args:
-        truck_params: Parameters for truck model
-        slope_indices: List of slope profiles to test on
-        data_set_indices: List of data sets to test on
-        ni, nh, no: Neural network dimensions
-        max_distance: Maximum distance for simulations (1000m)
-        v_max: Maximum allowed velocity
-        v_min: Minimum allowed velocity
-
-    Returns:
-        Fitness function that evaluates a chromosome
-    """
-    # Default truck parameters
-    if truck_params is None:
-        truck_params = {
-            "mass": 20000.0,  # kg
-            "base_engine_brake_coeff": 3000.0,  # Cb = 3000 N per spec
-            "max_brake_temp": 750.0,  # Tmax = 750 K per spec
-            "temp_cooling_tau": 30.0,  # tau = 30s per spec
-            "temp_heating_ch": 40.0,  # Ch = 40 K/s per spec
-            "ambient_temp": 283.0,  # Tamb = 283 K per spec
-        }
-
-    def fitness_function(chromosome: List[float]) -> float:
-        # Create controller from chromosome
-        controller = create_controller_from_chromosome(chromosome, ni, nh, no)
-
-        # Create truck instance
+        # Initialize truck
         truck = Truck(**truck_params)
 
-        # Run simulations for different slopes and datasets
         total_fitness = 0.0
-        num_scenarios = len(slope_indices) * len(data_set_indices)
+        all_metrics = []
 
-        for slope_idx in slope_indices:
-            for dataset_idx in data_set_indices:
-                # Reset truck with starting conditions from assignment:
-                # x = 0, v = 20 m/s, gear = 7, Tb = 500 K
-                truck.reset(position=0.0, velocity=20.0, gear=7, tb_total=500.0)
+        # Test on each slope
+        for slope_idx, data_set_idx in slopes:
+            # Reset with proper initial conditions from assignment
+            truck.reset(position=0.0, velocity=20.0, gear=7, tb_total=500.0)
 
-                # Simulate descent
-                try:
-                    history = truck.simulate(
-                        controller=controller,
-                        slope_index=slope_idx,
-                        data_set_index=dataset_idx,
-                        max_distance=max_distance,
-                        auto_gear=False,  # Use NN's gear change
-                    )
+            # Run simulation with constraints
+            result = truck.simulate(
+                controller=controller,
+                slope_index=slope_idx,
+                data_set_index=data_set_idx,
+                max_distance=max_distance,
+                v_min=v_min,
+                v_max=v_max,
+            )
 
-                    # Extract metrics for fitness calculation
-                    final_velocity = history["velocity"][-1]
-                    max_velocity = max(history["velocity"])
-                    min_velocity = min(history["velocity"])
-                    max_brake_temp = max(history["brake_temp"])
-                    avg_velocity = sum(history["velocity"]) / len(history["velocity"])
-                    distance = history["position"][-1]
+            # Get fitness from simulation results
+            slope_fitness = result["metrics"]["fitness"]
+            all_metrics.append(result["metrics"])
 
-                    # Check if constraints were violated
-                    constraints_violated = (
-                        max_velocity > v_max
-                        or min_velocity < v_min
-                        or max_brake_temp > truck_params["max_brake_temp"]
-                    )
+            # If constraint was violated, penalize but provide gradient
+            if result["metrics"]["constraint_violated"]:
+                # Calculate progress-based penalty
+                progress_ratio = result["metrics"]["distance_traveled"] / max_distance
+                # Better partial credit than flat multiplier
+                slope_fitness = slope_fitness * (0.1 + 0.3 * progress_ratio)
 
-                    # Simple fitness according to spec: F = v*d
-                    # If constraints violated, use actual distance traveled
-                    # If completed without violations, use full distance
-                    scenario_fitness = avg_velocity * distance
+                # Add time bonus for partial success
+                if result["metrics"]["time_elapsed"] > 0:
+                    slope_fitness += (
+                        result["metrics"]["time_elapsed"] / 60.0
+                    )  # Bonus per minute
 
-                    # Add penalty if constraints violated (optional)
-                    if constraints_violated:
-                        # Scale down fitness significantly when constraints are violated
-                        scenario_fitness *= 0.5
+            total_fitness += slope_fitness
 
-                    # Add to total fitness
-                    total_fitness += scenario_fitness
-
-                except Exception as e:
-                    print(f"Simulation error: {e}")
-                    total_fitness += 0.0  # Zero fitness for failed simulations
-
-        # Average fitness across all scenarios
-        return total_fitness / num_scenarios
+        # Return average fitness across all slopes
+        avg_fitness = total_fitness / len(slopes)
+        return avg_fitness
 
     return fitness_function
 
@@ -403,26 +366,18 @@ def run_optimization():
     # Create fitness functions for training and validation
     fitness_tr = create_fitness_function(
         truck_params=truck_params,
-        slope_indices=list(range(1, 11)),  # Slopes 1-10
-        data_set_indices=[1],  # Training set
-        ni=ni,
-        nh=nh,
-        no=no,
-        max_distance=1000.0,
-        v_max=vmax,
+        slopes=[(i, 1) for i in range(1, 11)],  # Fixed: Slopes 1-10 in dataset 1
         v_min=vmin,
+        v_max=vmax,
+        max_distance=1000.0,
     )
 
     fitness_val = create_fitness_function(
         truck_params=truck_params,
-        slope_indices=list(range(1, 6)),  # Slopes 1-5
-        data_set_indices=[2],  # Validation set
-        ni=ni,
-        nh=nh,
-        no=no,
-        max_distance=1000.0,
-        v_max=vmax,
+        slopes=[(i, 2) for i in range(1, 6)],  # Fixed: Slopes 1-5 in dataset 2
         v_min=vmin,
+        v_max=vmax,
+        max_distance=1000.0,
     )
 
     # GA parameters
@@ -431,10 +386,11 @@ def run_optimization():
         ni=ni,
         nh=nh,
         no=no,
-        mutation_rate=0.05,
+        mutation_rate=0.08,
         crossover_rate=0.8,
         selection_pressure=1.5,
         elitism=2,
+        tournament_size=5,
         seed=42,
     )
 

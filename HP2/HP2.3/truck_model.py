@@ -37,7 +37,7 @@ def engine_brake_force(base_coeff: float, gear: Gear) -> float:
     return base_coeff * gear.factor
 
 
-def service_brake_force(
+def foundation_brake_force(
     mass: float, pedal: float, brake_temp: float, max_brake_temp: float
 ) -> float:
     pedal = max(0.0, min(1.0, pedal))
@@ -86,7 +86,6 @@ class Truck:
         temp_heating_ch: float = DEFAULT_TEMP_HEATING_CH,
         ambient_temp: float = DEFAULT_AMBIENT_TEMP,
         dt: float = DEFAULT_TIME_STEP,
-        min_gear_shift_interval: float = 2.0,  # seconds: do not shift faster than this
     ):
         self._mass = float(mass)
         self.base_engine_brake_coeff = float(base_engine_brake_coeff)
@@ -95,7 +94,6 @@ class Truck:
         self.temp_cooling_tau = float(temp_cooling_tau)
         self.temp_heating_ch = float(temp_heating_ch)
         self.ambient_temp = float(ambient_temp)
-        self.min_gear_shift_interval = float(min_gear_shift_interval)
 
         # State variables
         self.delta_brake_temp = 0.0  # Temperature above ambient (ΔTb)
@@ -103,9 +101,6 @@ class Truck:
         self.velocity = 0.0
         self.dt = dt
         self.time = 0.0
-        # track when the last gear change occurred (seconds)
-        # initialize so a first change at time 0 is permitted
-        self.last_gear_change_time = -self.min_gear_shift_interval
 
     @property
     def mass(self) -> float:
@@ -132,14 +127,8 @@ class Truck:
         if gear == self._gear:
             return
 
-        # Enforce minimum interval between gear shifts
-        if (self.time - self.last_gear_change_time) < self.min_gear_shift_interval:
-            # Too soon to change gear; ignore request
-            return
-
-        # Accept gear change
+        # Accept gear change immediately (no timing constraint)
         self._gear = gear
-        self.last_gear_change_time = self.time
 
     def shift_up(self) -> None:
         if self._gear < Gear.G10:
@@ -154,7 +143,7 @@ class Truck:
         position: float = 0.0,
         velocity: float = 0.0,
         gear: int = 1,
-        tb_total: float = None,
+        tb_total=None,
     ) -> None:
         """Reset truck to initial state. tb_total is absolute Tb in K; if None uses ambient."""
         self.position = position
@@ -174,7 +163,7 @@ class Truck:
         return engine_brake_force(self.base_engine_brake_coeff, self._gear)
 
     def current_service_brake(self, pedal: float) -> float:
-        return service_brake_force(
+        return foundation_brake_force(
             self.mass, pedal, self.brake_temp, self.max_brake_temp
         )
 
@@ -238,10 +227,13 @@ class Truck:
         data_set_index: int,
         max_distance: float = 10000.0,
         max_time: float = 3600.0,  # 1 hour max
-        auto_gear: bool = True,
-    ) -> Dict[str, List[float]]:
+        auto_gear: bool = False,
+        v_min: float = 1.0,  # Minimum allowed velocity (m/s)
+        v_max: float = 25.0,  # Maximum allowed velocity (m/s)
+    ) -> Dict[str, Any]:
         """
         Simulate truck descent using provided controller function.
+        Terminates if constraints are violated.
 
         Args:
             controller: Function that returns (pedal_pressure, gear) given truck state
@@ -250,9 +242,11 @@ class Truck:
             max_distance: Maximum simulation distance [m]
             max_time: Maximum simulation time [s]
             auto_gear: If True, use automatic gear selection, otherwise use controller gear
+            v_min: Minimum allowed velocity [m/s]
+            v_max: Maximum allowed velocity [m/s]
 
         Returns:
-            Dict with time series data for position, velocity, etc.
+            Dict with time series data and fitness metrics
         """
         # Initialize history
         history = {
@@ -268,12 +262,30 @@ class Truck:
         }
 
         step_count = 0
-        # Continue until we reach max distance, time, or steps
+        constraint_violated = False
+        termination_reason = "max_distance"
+
+        # Continue until we reach max distance, time, steps, or violate constraints
         while (
             self.position < max_distance
             and self.time < max_time
             and step_count < MAX_SIMULATION_STEPS
         ):
+            # Check constraints before controller is called
+            if self.velocity > v_max:
+                constraint_violated = True
+                termination_reason = "v_max_exceeded"
+                break
+
+            if self.velocity < v_min and self.time > 5.0:  # Allow some startup time
+                constraint_violated = True
+                termination_reason = "v_min_violated"
+                break
+
+            if self.brake_temp > self.max_brake_temp:
+                constraint_violated = True
+                termination_reason = "brake_temp_exceeded"
+                break
 
             # Get control inputs from controller
             control_inputs = controller(
@@ -284,6 +296,7 @@ class Truck:
                     self.position, slope_index, data_set_index
                 ),
                 gear=self._gear.value,
+                current_time=self.time,  # Pass current simulation time
             )
 
             # Unpack control
@@ -315,7 +328,38 @@ class Truck:
 
             step_count += 1
 
-        return history
+        # Check if we hit max time
+        if self.time >= max_time:
+            termination_reason = "max_time"
+        elif step_count >= MAX_SIMULATION_STEPS:
+            termination_reason = "max_steps"
+
+        # Calculate fitness metrics
+        distance_traveled = self.position
+        time_elapsed = self.time
+
+        # Calculate average speed (excluding initial zero velocity if present)
+        velocities = [v for v in history["velocity"] if v > 0]
+        avg_speed = sum(velocities) / len(velocities) if velocities else 0
+
+        # Calculate fitness: F_i = v̄_i * d_i
+        fitness = avg_speed * distance_traveled
+
+        # Add metrics to the result
+        result = {
+            **history,  # Include all history data
+            "metrics": {
+                "distance_traveled": distance_traveled,
+                "time_elapsed": time_elapsed,
+                "avg_speed": avg_speed,
+                "fitness": fitness,
+                "constraint_violated": constraint_violated,
+                "termination_reason": termination_reason,
+                "completed_slope": self.position >= max_distance,
+            },
+        }
+
+        return result
 
     def apply_gear_change(self, gear_change: int) -> None:
         """
@@ -327,18 +371,11 @@ class Truck:
         if gear_change == 0:
             return  # No change requested
 
-        # Enforce minimum interval between gear shifts
-        if (self.time - self.last_gear_change_time) < self.min_gear_shift_interval:
-            # Too soon to change gear; ignore request
-            return
-
-        # Apply the requested change
+        # Apply the requested change immediately (no timing constraint)
         if gear_change > 0 and self._gear.value < 10:  # Shift up
             self._gear = Gear(self._gear.value + 1)
-            self.last_gear_change_time = self.time
         elif gear_change < 0 and self._gear.value > 1:  # Shift down
             self._gear = Gear(self._gear.value - 1)
-            self.last_gear_change_time = self.time
 
 
 def demo():
