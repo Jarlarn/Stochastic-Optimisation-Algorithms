@@ -113,4 +113,3 @@ if error_count == 0:
     print("Test OK")
 else:
     print("Test failed")
-input(f"Press return to exit")

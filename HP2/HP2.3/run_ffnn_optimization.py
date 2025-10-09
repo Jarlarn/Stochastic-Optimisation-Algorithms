@@ -280,8 +280,7 @@ def create_fitness_function(
 
         # Test on each slope
         for slope_idx, data_set_idx in slopes:
-            # create a fresh controller instance for each slope so time-dependent
-            # state (last_gear_change_time) does not carry over between slopes
+            # Create a fresh controller instance for each slope
             controller = create_controller_from_chromosome(chromosome)
             # Reset with proper initial conditions from assignment
             truck.reset(position=0.0, velocity=20.0, gear=7, tb_total=500.0)
@@ -300,7 +299,7 @@ def create_fitness_function(
             fitness = result["position"][-1]
 
             # Add rewards for proper brake usage and temperature management
-            if "pedal" in result and "brake_temp" in result:
+            if "pedal" in result and "brake_temp" in result and "velocity" in result:
                 pedals = result["pedal"]
                 temps = result["brake_temp"]
                 velocities = result["velocity"]
@@ -315,6 +314,10 @@ def create_fitness_function(
                     min(1.0, max(0, t - 400) / 300) for t in temps
                 ) / len(temps)
 
+                # Reward for maintaining high average velocity
+                avg_velocity = sum(velocities) / len(velocities)
+                velocity_reward = avg_velocity / v_max  # Normalize by max velocity
+
                 # Penalty for very low brake usage
                 if brake_usage < 0.05:  # Almost no brake usage
                     fitness *= 0.7  # Significant penalty
@@ -322,6 +325,7 @@ def create_fitness_function(
                 # Add rewards to fitness
                 fitness += fitness * 0.2 * brake_usage
                 fitness += fitness * 0.1 * temp_management
+                fitness += fitness * 0.3 * velocity_reward  # Higher weight for velocity
 
             total_fitness += fitness
             all_metrics.append(result["metrics"])
@@ -395,7 +399,7 @@ def run_optimization():
 
     # Run optimization with early stopping based on validation fitness
     max_generations = 200
-    patience = 40  # Stop after 40 generations with no improvement
+    patience = 30  # Stop after 30 generations with no improvement
     best_val_fitness = float("-inf")
     best_chromosome = None
     no_improvement = 0
@@ -468,7 +472,7 @@ def run_optimization():
         # Save checkpoint every checkpoint_interval generations
         if gen % checkpoint_interval == 0:
             # Save best chromosome as Python file with timestamp
-            with open(f"checkpoint_gen{gen}.py", "w") as f:
+            with open(f"checkpoints/checkpoint_gen{gen}.py", "w") as f:
                 f.write("# Checkpoint chromosome from GA optimization\n")
                 f.write(f"CHROMOSOME = {ga.best_individual}\n")
                 f.write(f"NI = {ni}  # Number of inputs\n")
@@ -493,10 +497,6 @@ def run_optimization():
             f.write(f"NO = {no}\n")
             f.write(f"SIGMOID_C = {SIGMOID_C}\n")
             f.write(f"TRAINING_FITNESS = {ga.best_fitness}\n")
-
-        # Also save JSON (compatibility)
-        ga.save_best("best_chromosome.json")
-        print("Saved best_chromosome.py and best_chromosome.json")
 
 
 run_optimization()
