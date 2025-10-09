@@ -178,14 +178,6 @@ class GeneticAlgorithm:
     ) -> Tuple[List[float], float]:
         """
         Run the evolutionary process for a specified number of generations
-
-        Args:
-            fitness_fn: Function that evaluates fitness of an individual
-            generations: Number of generations to evolve
-            verbose: Whether to print progress
-
-        Returns:
-            Tuple of (best_individual, best_fitness)
         """
         start_time = time.time()
 
@@ -208,10 +200,6 @@ class GeneticAlgorithm:
                 print(
                     f"Gen {gen:3d}/{generations}: Best={best_gen_fitness:.4f}, Avg={avg_fitness:.4f}, Time={elapsed:.1f}s"
                 )
-
-            # Stop if we've reached the final generation
-            if gen == generations - 1:
-                break
 
             # Create new population
             new_population = []
@@ -240,7 +228,6 @@ class GeneticAlgorithm:
                     new_population.append(child2)
 
             # Replace old population
-
             self.population = new_population
 
         return self.best_individual, self.best_fitness
@@ -285,9 +272,6 @@ def create_fitness_function(
     truck_params, slopes, v_min=1.0, v_max=25.0, max_distance=10000.0
 ):
     def fitness_function(chromosome):
-        # Create neural network controller from chromosome
-        controller = create_controller_from_chromosome(chromosome)
-
         # Initialize truck
         truck = Truck(**truck_params)
 
@@ -296,6 +280,9 @@ def create_fitness_function(
 
         # Test on each slope
         for slope_idx, data_set_idx in slopes:
+            # create a fresh controller instance for each slope so time-dependent
+            # state (last_gear_change_time) does not carry over between slopes
+            controller = create_controller_from_chromosome(chromosome)
             # Reset with proper initial conditions from assignment
             truck.reset(position=0.0, velocity=20.0, gear=7, tb_total=500.0)
 
@@ -381,98 +368,100 @@ def run_optimization():
     )
 
     # GA parameters
+    ga_pop_size = 100
     ga = GeneticAlgorithm(
-        pop_size=100,
+        pop_size=ga_pop_size,
         ni=ni,
         nh=nh,
         no=no,
-        mutation_rate=0.08,
+        mutation_rate=(1.0 / ga_pop_size),  # mutation rate = 1 / population_size
         crossover_rate=0.8,
-        selection_pressure=1.5,
-        elitism=2,
-        tournament_size=5,
+        selection_pressure=1.2,
+        elitism=1,
+        tournament_size=3,
         seed=42,
     )
 
     # Run optimization with early stopping based on validation fitness
     max_generations = 200
-    patience = 20
+    patience = 20000
     best_val_fitness = float("-inf")
     best_chromosome = None
     no_improvement = 0
 
+    checkpoint_interval = 10  # Save best chromosome every 10 generations
+    report_interval = 5  # Print detailed stats every 5 generations
+    start_time = time.time()
+
     print("Starting optimization...")
-    print("Generation | Training Fitness | Validation Fitness")
+    print("Generation | Training Fitness | Validation Fitness | Time (s) | Progress")
 
     for gen in range(max_generations):
+        gen_start_time = time.time()
+
         # Evolve for one generation using training fitness
         ga.evolve(fitness_fn=fitness_tr, generations=1, verbose=False)
 
         # Evaluate best chromosome on validation set
         val_fitness = fitness_val(ga.best_individual)
 
-        print(f"{gen:10d} | {ga.best_fitness:16.6f} | {val_fitness:18.6f}")
+        # Calculate elapsed time and estimate remaining
+        elapsed = time.time() - start_time
+        gen_time = time.time() - gen_start_time
+        estimated_remaining = gen_time * (max_generations - gen - 1)
 
-        # Check for improvement
-        if val_fitness > best_val_fitness:
-            best_val_fitness = val_fitness
-            best_chromosome = ga.best_individual.copy()
-            no_improvement = 0
+        # Print progress with time information
+        print(
+            f"{gen:10d} | {ga.best_fitness:16.6f} | {val_fitness:18.6f} | {elapsed:8.1f} | {gen/max_generations*100:5.1f}%"
+        )
 
-            # Save best chromosome as Python file
-            with open("best_chromosome.py", "w") as f:
-                f.write("# Best chromosome found through GA optimization\n")
-                f.write(f"CHROMOSOME = {best_chromosome}\n")
+        # Detailed report every report_interval generations
+        if gen % report_interval == 0:
+            # Calculate improvement rate (over last 10 generations or fewer if early)
+            history_window = min(10, len(ga.best_fitness_history))
+            if history_window > 1:
+                recent_history = ga.best_fitness_history[-history_window:]
+                improvement_rate = (
+                    recent_history[-1] - recent_history[0]
+                ) / history_window
+                print(f"  Recent improvement rate: {improvement_rate:.6f}/gen")
+                print(f"  Est. completion in: {estimated_remaining/60:.1f} minutes")
+                print(
+                    f"  Population diversity: {np.mean(np.std(np.array(ga.population), axis=0)):.6f}"
+                )
+
+        # Save checkpoint every checkpoint_interval generations
+        if gen % checkpoint_interval == 0:
+            # Save best chromosome as Python file with timestamp
+            with open(f"checkpoint_gen{gen}.py", "w") as f:
+                f.write("# Checkpoint chromosome from GA optimization\n")
+                f.write(f"CHROMOSOME = {ga.best_individual}\n")
                 f.write(f"NI = {ni}  # Number of inputs\n")
                 f.write(f"NH = {nh}  # Number of hidden neurons\n")
                 f.write(f"NO = {no}  # Number of outputs\n")
                 f.write(f"SIGMOID_C = {SIGMOID_C}  # Sigmoid parameter c\n")
-        else:
-            no_improvement += 1
+                f.write(f"TRAINING_FITNESS = {ga.best_fitness}  # Training fitness\n")
+                f.write(f"VALIDATION_FITNESS = {val_fitness}  # Validation fitness\n")
+                f.write(f"GENERATION = {gen}  # Generation number\n")
 
-        # Early stopping
-        if no_improvement >= patience:
-            print(
-                f"Early stopping after {gen} generations (no improvement for {patience} generations)"
-            )
-            break
+            print(f"  Checkpoint saved to checkpoint_gen{gen}.py")
 
-    print("\nOptimization completed!")
-    print(f"Best validation fitness: {best_val_fitness:.6f}")
+    # End of generational loop -----------------------------------------------------------------
+    # Save final best chromosome so run_test.py can load and rerun it
+    if ga.best_individual is not None:
+        # Save as Python module for easy import by run_test.py
+        with open("best_chromosome.py", "w") as f:
+            f.write("# Best chromosome saved by run_ffnn_optimization\n")
+            f.write(f"CHROMOSOME = {ga.best_individual}\n")
+            f.write(f"NI = {ni}\n")
+            f.write(f"NH = {nh}\n")
+            f.write(f"NO = {no}\n")
+            f.write(f"SIGMOID_C = {SIGMOID_C}\n")
+            f.write(f"TRAINING_FITNESS = {ga.best_fitness}\n")
 
-    # Also save as JSON for test program
-    import json
-
-    with open("best_chromosome.json", "w") as f:
-        json.dump(
-            {
-                "chromosome": best_chromosome,
-                "ni": ni,
-                "nh": nh,
-                "no": no,
-                "sigmoid_c": SIGMOID_C,
-                "fitness": best_val_fitness,
-            },
-            f,
-            indent=2,
-        )
-
-    print("Best chromosome saved to best_chromosome.py and best_chromosome.json")
-
-    # Plot fitness history if available
-    if hasattr(ga, "best_fitness_history") and len(ga.best_fitness_history) > 0:
-        import matplotlib.pyplot as plt
-
-        plt.figure(figsize=(10, 6))
-        plt.plot(ga.best_fitness_history, label="Training Fitness")
-        plt.xlabel("Generation")
-        plt.ylabel("Fitness")
-        plt.title("Fitness History")
-        plt.legend()
-        plt.grid(True)
-        plt.savefig("fitness_history.png")
-        plt.show()
+        # Also save JSON (compatibility)
+        ga.save_best("best_chromosome.json")
+        print("Saved best_chromosome.py and best_chromosome.json")
 
 
-if __name__ == "__main__":
-    run_optimization()
+run_optimization()

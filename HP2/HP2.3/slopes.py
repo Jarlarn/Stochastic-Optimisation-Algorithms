@@ -3,27 +3,21 @@ import math
 ALPHA_MAX = 10.0  # degrees (maximum allowed slope angle)
 SLOPE_LENGTH = 1000.0  # horizontal length of every slope [m]
 
-# This file provides the FORMAT you should use for the
-# slopes in HP2.3. x denotes the horizontal distance
-# travelled (by the truck) on a given slope, and
-# alpha measures the slope angle at distance x
-
 
 def get_slope_angle(x: float, slope_index: int, data_set_index: int) -> float:
     """
     Return slope angle in degrees (downhill positive).
 
     x is interpreted on the interval [0, SLOPE_LENGTH]; values outside are clamped.
+    Raises ValueError if the slope_index and data_set_index combination is invalid.
     """
-    # clamp x to the canonical slope length so every slope is 1000 m long
+    # Clamp x to the canonical slope length so every slope is 1000 m long
     if x < 0.0:
         x = 0.0
     elif x > SLOPE_LENGTH:
         x = SLOPE_LENGTH
 
-    # Default value for any undefined combinations (degrees)
-    alpha_deg = 4.0  # reasonable default downhill angle
-
+    # Validate slope_index and data_set_index
     if data_set_index == 0:  # Default slopes
         if slope_index == 0:
             alpha_deg = 3.5 + math.sin(x / 200)
@@ -53,6 +47,10 @@ def get_slope_angle(x: float, slope_index: int, data_set_index: int) -> float:
             alpha_deg = 4.8 - 0.3 * math.sin(x / 170) + 0.5 * math.cos(x / 130)
         elif slope_index == 10:
             alpha_deg = 3 + 2 * math.sin(x / 50) + math.cos(math.sqrt(2) * x / 100)
+        else:
+            raise ValueError(
+                f"Invalid slope_index {slope_index} for data_set_index {data_set_index}"
+            )
 
     elif data_set_index == 2:  # Validation set (5 slopes)
         if slope_index == 1:
@@ -65,6 +63,10 @@ def get_slope_angle(x: float, slope_index: int, data_set_index: int) -> float:
             alpha_deg = 5.2 - 0.4 * math.sin(x / 110) - 0.5 * math.cos(x / 60)
         elif slope_index == 5:
             alpha_deg = 5 + math.sin(x / 50) + math.cos(math.sqrt(5) * x / 50)
+        else:
+            raise ValueError(
+                f"Invalid slope_index {slope_index} for data_set_index {data_set_index}"
+            )
 
     elif data_set_index == 3:  # Test set (5 slopes)
         if slope_index == 1:
@@ -79,6 +81,13 @@ def get_slope_angle(x: float, slope_index: int, data_set_index: int) -> float:
             alpha_deg = (
                 4 + (x / 1000) + math.sin(x / 70) + math.cos(math.sqrt(7) * x / 100)
             )
+        else:
+            raise ValueError(
+                f"Invalid slope_index {slope_index} for data_set_index {data_set_index}"
+            )
+
+    else:
+        raise ValueError(f"Invalid data_set_index {data_set_index}")
 
     # Ensure the angle is a sensible positive degree value (downhill), maximum 10 degrees
     return max(0.5, min(ALPHA_MAX, alpha_deg))
