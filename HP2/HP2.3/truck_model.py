@@ -52,30 +52,6 @@ def gravity_component(mass: float, slope_angle_deg: float) -> float:
     return mass * GRAVITY * math.sin(math.radians(slope_angle_deg))
 
 
-def select_gear_by_speed(speed: float) -> Gear:
-    """Simple automatic gear selection based on speed"""
-    if speed < 10.0:
-        return Gear.G1
-    elif speed < 20.0:
-        return Gear.G2
-    elif speed < 30.0:
-        return Gear.G3
-    elif speed < 40.0:
-        return Gear.G4
-    elif speed < 50.0:
-        return Gear.G5
-    elif speed < 60.0:
-        return Gear.G6
-    elif speed < 70.0:
-        return Gear.G7
-    elif speed < 80.0:
-        return Gear.G8
-    elif speed < 90.0:
-        return Gear.G9
-    else:
-        return Gear.G10
-
-
 class Truck:
     def __init__(
         self,
@@ -309,8 +285,6 @@ class Truck:
             # Apply gear control if provided and not using auto gear
             if gear_change is not None and not auto_gear:
                 self.apply_gear_change(gear_change)
-            elif auto_gear:
-                self.set_gear(select_gear_by_speed(self.velocity))
 
             # Update state
             self.update_state(pedal, slope_index, data_set_index)

@@ -112,7 +112,7 @@ class NeuralNetworkController:
 
         Returns:
             Tuple of (brake_pedal_pressure, gear_change)
-            where gear_change is -1 (down), 0 (no change), or 1 (up)
+            where gear_change is -1 (down), 0 (no change), or 1 (up-shift)
         """
         # Normalize inputs as specified in assignment:
         # v/vmax, α/αmax, Tb/Tmax
@@ -128,22 +128,21 @@ class NeuralNetworkController:
         # First output: brake pedal pressure [0,1]
         brake_pedal = max(0.0, min(1.0, nn_outputs[0]))
 
-        # Boost pedal values to ensure actual braking is used
-        # Higher slopes and velocities should trigger stronger braking
-        if velocity > 0.8 * 25.0 or (slope_angle > 5.0 and velocity > 0.6 * 25.0):
-            brake_pedal = max(
-                brake_pedal, 0.6
-            )  # Apply significant braking in high-risk scenarios
-        elif velocity > 0.6 * 25.0 and slope_angle > 3.0:
-            brake_pedal = max(brake_pedal, 0.3)  # Apply moderate braking
-
         # Second output: gear change
+        gear_out = nn_outputs[1]  # Extract the second output from the neural network
+
+        # Dynamic thresholds based on velocity
+        if velocity > 0.8 * V_MAX:  # High velocity
+            down_shift_threshold = 0.25
+            up_shift_threshold = 0.75
+        else:  # Low velocity
+            down_shift_threshold = 0.4
+            up_shift_threshold = 0.6
+
         # Map to [-1, 0, 1] for (down, no change, up)
-        gear_out = nn_outputs[1]
-        # Threshold into 3 regions
-        if gear_out < 0.33:
+        if gear_out < down_shift_threshold:
             gear_change = -1  # Down-shift
-        elif gear_out > 0.67:
+        elif gear_out > up_shift_threshold:
             gear_change = 1  # Up-shift
         else:
             gear_change = 0  # No change

@@ -269,23 +269,16 @@ class GeneticAlgorithm:
 
 
 def create_fitness_function(
-    truck_params, slopes, v_min=1.0, v_max=25.0, max_distance=10000.0
+    truck_params, slopes, v_min=1.0, v_max=25.0, max_distance=10000.0, Tmax=750.0
 ):
     def fitness_function(chromosome):
-        # Initialize truck
         truck = Truck(**truck_params)
-
         total_fitness = 0.0
-        all_metrics = []
 
-        # Test on each slope
         for slope_idx, data_set_idx in slopes:
-            # Create a fresh controller instance for each slope
             controller = create_controller_from_chromosome(chromosome)
-            # Reset with proper initial conditions from assignment
             truck.reset(position=0.0, velocity=20.0, gear=7, tb_total=500.0)
 
-            # Run simulation with constraints
             result = truck.simulate(
                 controller=controller,
                 slope_index=slope_idx,
@@ -295,44 +288,31 @@ def create_fitness_function(
                 v_max=v_max,
             )
 
-            # Base fitness is distance traveled
-            fitness = result["position"][-1]
+            # Check if the truck completed the entire distance
+            distance_traveled = result["position"][-1]
+            if distance_traveled < max_distance:
+                return 0.0  # Invalidate solution if the truck didn't complete the path
 
-            # Add rewards for proper brake usage and temperature management
-            if "pedal" in result and "brake_temp" in result and "velocity" in result:
-                pedals = result["pedal"]
-                temps = result["brake_temp"]
+            # Check for constraint violations
+            if "velocity" in result and "brake_temp" in result:
                 velocities = result["velocity"]
+                temps = result["brake_temp"]
 
-                # Reward for using brakes appropriately (when needed)
-                brake_usage = sum(p > 0.2 for p in pedals) / len(
-                    pedals
-                )  # Percentage of time brakes were applied
+                if any(t > Tmax for t in temps):  # Brake temperature exceeds Tmax
+                    return 0.0  # Invalidate solution
+                if any(
+                    v < v_min or v > v_max for v in velocities
+                ):  # Velocity out of bounds
+                    return 0.0  # Invalidate solution
 
-                # Reward for temperature management - closer to optimal range (600-700K)
-                temp_management = sum(
-                    min(1.0, max(0, t - 400) / 300) for t in temps
-                ) / len(temps)
+            # Calculate average velocity
+            avg_velocity = sum(result["velocity"]) / len(result["velocity"])
 
-                # Reward for maintaining high average velocity
-                avg_velocity = sum(velocities) / len(velocities)
-                velocity_reward = avg_velocity / v_max  # Normalize by max velocity
+            # Reward for average velocity * distance traveled
+            velocity_distance_reward = avg_velocity * distance_traveled
+            total_fitness += velocity_distance_reward
 
-                # Penalty for very low brake usage
-                if brake_usage < 0.05:  # Almost no brake usage
-                    fitness *= 0.7  # Significant penalty
-
-                # Add rewards to fitness
-                fitness += fitness * 0.2 * brake_usage
-                fitness += fitness * 0.1 * temp_management
-                fitness += fitness * 0.3 * velocity_reward  # Higher weight for velocity
-
-            total_fitness += fitness
-            all_metrics.append(result["metrics"])
-
-        # Return average fitness across all slopes
-        avg_fitness = total_fitness / len(slopes)
-        return avg_fitness
+        return total_fitness / len(slopes)
 
     return fitness_function
 
@@ -348,7 +328,6 @@ def run_optimization():
     Cb = 3000.0  # N (engine brake base coeff)
     vmax = 25.0  # m/s
     vmin = 1.0  # m/s
-    alpha_max = 10.0  # degrees
 
     # Neural network configuration
     ni = 3  # Normalized inputs: v/vmax, α/αmax, Tb/Tmax
