@@ -296,24 +296,35 @@ def create_fitness_function(
                 v_max=v_max,
             )
 
-            # Get fitness from simulation results
-            slope_fitness = result["metrics"]["fitness"]
+            # Base fitness is distance traveled
+            fitness = result["position"][-1]
+
+            # Add rewards for proper brake usage and temperature management
+            if "pedal" in result and "brake_temp" in result:
+                pedals = result["pedal"]
+                temps = result["brake_temp"]
+                velocities = result["velocity"]
+
+                # Reward for using brakes appropriately (when needed)
+                brake_usage = sum(p > 0.2 for p in pedals) / len(
+                    pedals
+                )  # Percentage of time brakes were applied
+
+                # Reward for temperature management - closer to optimal range (600-700K)
+                temp_management = sum(
+                    min(1.0, max(0, t - 400) / 300) for t in temps
+                ) / len(temps)
+
+                # Penalty for very low brake usage
+                if brake_usage < 0.05:  # Almost no brake usage
+                    fitness *= 0.7  # Significant penalty
+
+                # Add rewards to fitness
+                fitness += fitness * 0.2 * brake_usage
+                fitness += fitness * 0.1 * temp_management
+
+            total_fitness += fitness
             all_metrics.append(result["metrics"])
-
-            # If constraint was violated, penalize but provide gradient
-            if result["metrics"]["constraint_violated"]:
-                # Calculate progress-based penalty
-                progress_ratio = result["metrics"]["distance_traveled"] / max_distance
-                # Better partial credit than flat multiplier
-                slope_fitness = slope_fitness * (0.1 + 0.3 * progress_ratio)
-
-                # Add time bonus for partial success
-                if result["metrics"]["time_elapsed"] > 0:
-                    slope_fitness += (
-                        result["metrics"]["time_elapsed"] / 60.0
-                    )  # Bonus per minute
-
-            total_fitness += slope_fitness
 
         # Return average fitness across all slopes
         avg_fitness = total_fitness / len(slopes)
@@ -384,7 +395,7 @@ def run_optimization():
 
     # Run optimization with early stopping based on validation fitness
     max_generations = 200
-    patience = 20000
+    patience = 40  # Stop after 40 generations with no improvement
     best_val_fitness = float("-inf")
     best_chromosome = None
     no_improvement = 0
@@ -404,6 +415,30 @@ def run_optimization():
 
         # Evaluate best chromosome on validation set
         val_fitness = fitness_val(ga.best_individual)
+
+        # Check for improvement
+        if val_fitness > best_val_fitness:
+            best_val_fitness = val_fitness
+            best_chromosome = ga.best_individual.copy()
+            no_improvement = 0  # Reset counter when improvement found
+
+            # Save best chromosome as Python file
+            with open("best_chromosome.py", "w") as f:
+                f.write("# Best chromosome found through GA optimization\n")
+                f.write(f"CHROMOSOME = {best_chromosome}\n")
+                f.write(f"NI = {ni}  # Number of inputs\n")
+                f.write(f"NH = {nh}  # Number of hidden neurons\n")
+                f.write(f"NO = {no}  # Number of outputs\n")
+                f.write(f"SIGMOID_C = {SIGMOID_C}  # Sigmoid parameter c\n")
+        else:
+            no_improvement += 1
+
+        # Early stopping
+        if no_improvement >= patience:
+            print(
+                f"Early stopping after {gen} generations (no improvement for {patience} generations)"
+            )
+            break
 
         # Calculate elapsed time and estimate remaining
         elapsed = time.time() - start_time
