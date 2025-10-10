@@ -49,8 +49,8 @@ class NeuralNetworkController:
             self.w_i_h, self.w_h_o = decode_chromosome(chromosome, ni, nh, no, w_max)
         else:
             # Initialize with small random weights
-            self.w_i_h = np.random.uniform(-0.5, 0.5, (nh, ni + 1))
-            self.w_h_o = np.random.uniform(-0.5, 0.5, (no, nh + 1))
+            self.w_i_h = np.random.uniform(-1, 1, (nh, ni + 1))
+            self.w_h_o = np.random.uniform(-1, 1, (no, nh + 1))
 
     def activate(self, x: np.ndarray) -> np.ndarray:
         """
@@ -97,7 +97,7 @@ class NeuralNetworkController:
         brake_temp: float,
         slope_angle: float,
         gear: int,
-        current_time: float,  # New parameter for current time
+        current_time: float,
     ) -> Tuple[float, int]:
         """
         Control function interface for use with truck simulation.
@@ -108,11 +108,10 @@ class NeuralNetworkController:
             brake_temp: Current brake temperature [K]
             slope_angle: Current slope angle [degrees]
             gear: Current gear
-            current_time: Current time [s] - new parameter for time-based control
+            current_time: Current time [s]
 
         Returns:
             Tuple of (brake_pedal_pressure, gear_change)
-            where gear_change is -1 (down), 0 (no change), or 1 (up-shift)
         """
         # Normalize inputs as specified in assignment:
         # v/vmax, α/αmax, Tb/Tmax
@@ -130,14 +129,9 @@ class NeuralNetworkController:
 
         # Second output: gear change
         gear_out = nn_outputs[1]  # Extract the second output from the neural network
-
-        # Dynamic thresholds based on velocity
-        if velocity > 0.8 * V_MAX:  # High velocity
-            down_shift_threshold = 0.25
-            up_shift_threshold = 0.75
-        else:  # Low velocity
-            down_shift_threshold = 0.4
-            up_shift_threshold = 0.6
+        # Adjust thresholds based on velocity
+        down_shift_threshold = 0.4
+        up_shift_threshold = 0.6
 
         # Map to [-1, 0, 1] for (down, no change, up)
         if gear_out < down_shift_threshold:
@@ -147,11 +141,18 @@ class NeuralNetworkController:
         else:
             gear_change = 0  # No change
 
-        # Add current_time parameter and tracking of last_gear_change_time
+        # Force upshifting when approaching v_min
+        if velocity < 1.5 * V_MIN and gear < 10:
+            gear_change = 1  # Force upshift to speed up
+
+        # Prevent downshifting when velocity is low
+        if velocity < 2.0 * V_MIN and gear_change == -1:
+            gear_change = 0  # Prevent downshift
+
+        # Apply time constraint to gear changes
         if not hasattr(self, "last_gear_change_time"):
             self.last_gear_change_time = -float("inf")
 
-        # Apply time constraint to gear changes
         if current_time - self.last_gear_change_time < 2.0:  # 2 second minimum
             gear_change = 0  # Force no change if not enough time passed
         else:

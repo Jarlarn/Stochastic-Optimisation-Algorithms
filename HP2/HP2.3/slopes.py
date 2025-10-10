@@ -17,69 +17,115 @@ def get_slope_angle(x: float, slope_index: int, data_set_index: int) -> float:
     elif x > SLOPE_LENGTH:
         x = SLOPE_LENGTH
 
-    # Validate slope_index and data_set_index
-    if data_set_index == 0:  # Default slopes
-        if slope_index == 0:
-            alpha_deg = 3.5 + math.sin(x / 200)
-        elif slope_index == 1:
-            alpha_deg = 4.0 + 2.0 * math.sin(x / 300)
-        else:
-            alpha_deg = 3.0 + math.cos(x / 150)
-
-    elif data_set_index == 1:  # Training set (10 slopes)
+    # Training set slopes (10 slopes)
+    if data_set_index == 1:
         if slope_index == 1:
-            alpha_deg = 4 + math.sin(x / 100) + math.cos(math.sqrt(2) * x / 50)
+            alpha_deg = ALPHA_MAX * (
+                0.25 + 0.35 * (x / SLOPE_LENGTH) + 0.15 * math.sin(x / 150)
+            )
         elif slope_index == 2:
-            alpha_deg = 3.5 + math.sin(x / 120) + math.cos(x / 80)
+            alpha_deg = ALPHA_MAX * (
+                0.6 - 0.4 * (x / SLOPE_LENGTH) + 0.2 * math.sin(x / 60)
+            )
         elif slope_index == 3:
-            alpha_deg = 5.0 + math.sin(x / 90) + 0.5 * math.cos(x / 70)
+            alpha_deg = ALPHA_MAX * (0.5 + 0.35 * math.sin(2 * math.pi * x / 400))
         elif slope_index == 4:
-            alpha_deg = 4.5 - 0.5 * math.sin(x / 110) + math.cos(x / 60)
+            alpha_deg = ALPHA_MAX * (
+                0.4 + 0.25 * math.sin(x / 80) + 0.2 * math.cos(math.sqrt(2) * x / 150)
+            )
         elif slope_index == 5:
-            alpha_deg = 3.8 + math.sin(x / 130) - 0.6 * math.cos(x / 90)
+            alpha_deg = ALPHA_MAX * (
+                0.3 + 0.35 * math.exp(-(((x - 500.0) / 150.0) ** 2))
+            )
         elif slope_index == 6:
-            alpha_deg = 4.2 + 0.7 * math.sin(x / 140) + 0.3 * math.cos(x / 100)
+            alpha_deg = ALPHA_MAX * (
+                0.45 + 0.25 * math.sin(2.5 * x / 50) + 0.1 * math.cos(x / 30)
+            )
         elif slope_index == 7:
-            alpha_deg = 5.2 - 0.4 * math.sin(x / 150) + 0.8 * math.cos(x / 110)
+            alpha_deg = ALPHA_MAX * (
+                0.35 + 0.3 * (math.sin(x / 300) ** 3) + 0.15 * math.cos(x / 120)
+            )
         elif slope_index == 8:
-            alpha_deg = 3.6 + 0.9 * math.sin(x / 160) - 0.2 * math.cos(x / 120)
+            alpha_deg = ALPHA_MAX * (
+                0.2 + 0.35 * math.sin(x / 90) + 0.25 * (x / SLOPE_LENGTH)
+            )
         elif slope_index == 9:
-            alpha_deg = 4.8 - 0.3 * math.sin(x / 170) + 0.5 * math.cos(x / 130)
+            alpha_deg = ALPHA_MAX * (
+                0.4 + 0.2 * math.sin(x / 110) + 0.2 * math.sin(x / 40)
+            )
         elif slope_index == 10:
-            alpha_deg = 3 + 2 * math.sin(x / 50) + math.cos(math.sqrt(2) * x / 100)
+            alpha_deg = ALPHA_MAX * (
+                0.25
+                + 0.25 * math.exp(-(((x - 300.0) / 120.0) ** 2))
+                + 0.25 * math.exp(-(((x - 700.0) / 120.0) ** 2))
+            )
         else:
             raise ValueError(
                 f"Invalid slope_index {slope_index} for data_set_index {data_set_index}"
             )
 
-    elif data_set_index == 2:  # Validation set (5 slopes)
+    # Validation set slopes (5 slopes) - complementary, still depend on x and are within ALPHA_MAX
+    elif data_set_index == 2:
         if slope_index == 1:
-            alpha_deg = 6 - math.sin(x / 100) + math.cos(math.sqrt(3) * x / 50)
+            # slow upward trend with medium wiggles
+            alpha_deg = ALPHA_MAX * (
+                0.3 + 0.4 * (x / SLOPE_LENGTH) + 0.2 * math.sin(x / 70)
+            )
         elif slope_index == 2:
-            alpha_deg = 5.5 - 0.5 * math.sin(x / 120) + 0.8 * math.cos(x / 80)
+            # predominantly sinusoidal with varying amplitude
+            alpha_deg = ALPHA_MAX * (
+                0.45 + 0.35 * math.sin(2 * math.pi * x / 300) * math.cos(x / 200)
+            )
         elif slope_index == 3:
-            alpha_deg = 4.8 + 0.7 * math.sin(x / 90) - 0.3 * math.cos(x / 70)
+            # two localized bumps (different widths)
+            alpha_deg = ALPHA_MAX * (
+                0.2
+                + 0.35 * math.exp(-(((x - 250.0) / 80.0) ** 2))
+                + 0.25 * math.exp(-(((x - 650.0) / 140.0) ** 2))
+            )
         elif slope_index == 4:
-            alpha_deg = 5.2 - 0.4 * math.sin(x / 110) - 0.5 * math.cos(x / 60)
+            # gentle oscillation plus a small decreasing ramp
+            alpha_deg = ALPHA_MAX * (
+                0.5 - 0.25 * (x / SLOPE_LENGTH) + 0.25 * math.sin(x / 55)
+            )
         elif slope_index == 5:
-            alpha_deg = 5 + math.sin(x / 50) + math.cos(math.sqrt(5) * x / 50)
+            # asymmetric slow variation using a shifted sine^2
+            alpha_deg = ALPHA_MAX * (
+                0.35 + 0.3 * (math.sin((x + 120) / 220) ** 2) + 0.15 * math.cos(x / 95)
+            )
         else:
             raise ValueError(
                 f"Invalid slope_index {slope_index} for data_set_index {data_set_index}"
             )
 
-    elif data_set_index == 3:  # Test set (5 slopes)
+    # Test set slopes (5 slopes) - novel shapes to evaluate generalization
+    elif data_set_index == 3:
         if slope_index == 1:
-            alpha_deg = 6 - math.sin(x / 100) + math.cos(math.sqrt(7) * x / 50)
+            # low baseline with medium-frequency modulation
+            alpha_deg = ALPHA_MAX * (
+                0.28 + 0.32 * math.sin(x / 85) + 0.25 * math.cos(math.sqrt(7) * x / 50)
+            )
         elif slope_index == 2:
-            alpha_deg = 5.8 + 0.6 * math.sin(x / 130) - 0.4 * math.cos(x / 90)
+            # slowly increasing with a late bump
+            alpha_deg = ALPHA_MAX * (
+                0.3
+                + 0.35 * (x / SLOPE_LENGTH)
+                + 0.2 * math.exp(-(((x - 800.0) / 80.0) ** 2))
+            )
         elif slope_index == 3:
-            alpha_deg = 6.2 - 0.5 * math.sin(x / 140) + 0.7 * math.cos(x / 100)
+            # alternating small/large ripples (challenging)
+            alpha_deg = ALPHA_MAX * (
+                0.4 + 0.2 * math.sin(x / 40) + 0.2 * math.sin(x / 180)
+            )
         elif slope_index == 4:
-            alpha_deg = 5.5 + 0.8 * math.sin(x / 150) - 0.2 * math.cos(x / 110)
+            # single broad bump near start
+            alpha_deg = ALPHA_MAX * (
+                0.3 + 0.45 * math.exp(-(((x - 150.0) / 180.0) ** 2))
+            )
         elif slope_index == 5:
-            alpha_deg = (
-                4 + (x / 1000) + math.sin(x / 70) + math.cos(math.sqrt(7) * x / 100)
+            # mix of slow trend and high-frequency detail
+            alpha_deg = ALPHA_MAX * (
+                0.35 + 0.25 * (x / SLOPE_LENGTH) + 0.2 * math.sin(3 * x / 60)
             )
         else:
             raise ValueError(
@@ -89,5 +135,4 @@ def get_slope_angle(x: float, slope_index: int, data_set_index: int) -> float:
     else:
         raise ValueError(f"Invalid data_set_index {data_set_index}")
 
-    # Ensure the angle is a sensible positive degree value (downhill), maximum 10 degrees
-    return max(0.5, min(ALPHA_MAX, alpha_deg))
+    return alpha_deg

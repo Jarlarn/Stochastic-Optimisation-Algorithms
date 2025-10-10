@@ -40,11 +40,26 @@ def engine_brake_force(base_coeff: float, gear: Gear) -> float:
 def foundation_brake_force(
     mass: float, pedal: float, brake_temp: float, max_brake_temp: float
 ) -> float:
+    """
+    Calculate the foundation brake force based on pedal pressure, mass, and brake temperature.
+
+    Args:
+        mass: Truck mass [kg]
+        pedal: Brake pedal pressure [0,1]
+        brake_temp: Current brake temperature [K]
+        max_brake_temp: Maximum allowable brake temperature [K]
+
+    Returns:
+        Brake force [N]
+    """
     pedal = max(0.0, min(1.0, pedal))
     mg_over_20 = mass * GRAVITY / 20.0
     threshold = max_brake_temp - 100.0
+
     if brake_temp < threshold:
         return mg_over_20 * pedal
+
+    # Exponential decay for brake force above threshold
     return mg_over_20 * pedal * math.exp(-(brake_temp - threshold) / 100.0)
 
 
@@ -208,21 +223,20 @@ class Truck:
         v_max: float = 25.0,  # Maximum allowed velocity (m/s)
     ) -> Dict[str, Any]:
         """
-        Simulate truck descent using provided controller function.
-        Terminates if constraints are violated.
+        Simulate the truck's behavior over a slope using the given controller.
 
         Args:
-            controller: Function that returns (pedal_pressure, gear) given truck state
-            slope_index: Slope profile index
-            data_set_index: Data set index
-            max_distance: Maximum simulation distance [m]
-            max_time: Maximum simulation time [s]
-            auto_gear: If True, use automatic gear selection, otherwise use controller gear
-            v_min: Minimum allowed velocity [m/s]
-            v_max: Maximum allowed velocity [m/s]
+            controller: Function to control the truck.
+            slope_index: Index of the slope.
+            data_set_index: Index of the data set.
+            max_distance: Maximum distance to simulate [m].
+            max_time: Maximum simulation time [s].
+            auto_gear: Whether to automatically adjust gears.
+            v_min: Minimum velocity [m/s].
+            v_max: Maximum velocity [m/s].
 
         Returns:
-            Dict with time series data and fitness metrics
+            Dictionary containing simulation results.
         """
         # Initialize history
         history = {
@@ -282,8 +296,8 @@ class Truck:
                 pedal = float(control_inputs)
                 gear_change = 0  # No change
 
-            # Apply gear control if provided and not using auto gear
-            if gear_change is not None and not auto_gear:
+            # Apply gear control if provided
+            if gear_change is not None:
                 self.apply_gear_change(gear_change)
 
             # Update state

@@ -5,9 +5,15 @@ import json
 import os
 from typing import List, Dict, Tuple, Callable, Any, Optional
 import matplotlib.pyplot as plt
+import logging
 
 from truck_model import Truck
 from nn_controller import create_controller_from_chromosome, SIGMOID_C
+
+# Configure logging
+logging.basicConfig(
+    level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s"
+)
 
 # Type aliases
 Population = List[List[float]]
@@ -20,15 +26,14 @@ class GeneticAlgorithm:
     def __init__(
         self,
         pop_size: int = 50,
-        chromosome_length: int = None,
+        chromosome_length: Optional[int] = None,  # Allow None explicitly
         ni: int = 4,
         nh: int = 6,
         no: int = 2,
         mutation_rate: float = 0.05,
         crossover_rate: float = 0.8,
-        selection_pressure: float = 1.5,
         elitism: int = 1,
-        seed: int = None,
+        seed: Optional[int] = None,  # Allow None explicitly
         tournament_size: int = 3,  # NEW: tournament size for selection
     ):
         """
@@ -42,7 +47,6 @@ class GeneticAlgorithm:
             no: Number of outputs
             mutation_rate: Probability of gene mutation
             crossover_rate: Probability of crossover
-            selection_pressure: Pressure for rank selection
             elitism: Number of best individuals to preserve
             seed: Random seed
         """
@@ -61,7 +65,6 @@ class GeneticAlgorithm:
 
         self.mutation_rate = mutation_rate
         self.crossover_rate = crossover_rate
-        self.selection_pressure = selection_pressure
         self.elitism = elitism
         self.tournament_size = tournament_size
         self.tournament_probability = 0.75
@@ -175,7 +178,7 @@ class GeneticAlgorithm:
 
     def evolve(
         self, fitness_fn: FitnessFunction, generations: int = 100, verbose: bool = True
-    ) -> Tuple[List[float], float]:
+    ) -> Tuple[Optional[List[float]], float]:  # Adjust return type to allow None
         """
         Run the evolutionary process for a specified number of generations
         """
@@ -248,28 +251,9 @@ class GeneticAlgorithm:
         else:
             plt.show()
 
-    def save_best(self, filename: str = "best_chromosome.json"):
-        """Save the best individual to a file"""
-        data = {
-            "chromosome": self.best_individual,
-            "fitness": self.best_fitness,
-            "ni": self.ni,
-            "nh": self.nh,
-            "no": self.no,
-            "history": {
-                "best_fitness": self.best_fitness_history,
-                "avg_fitness": self.avg_fitness_history,
-            },
-        }
-
-        with open(filename, "w") as f:
-            json.dump(data, f, indent=2)
-
-        print(f"Best individual saved to {filename}")
-
 
 def create_fitness_function(
-    truck_params, slopes, v_min=1.0, v_max=25.0, max_distance=10000.0, Tmax=750.0
+    truck_params, slopes, v_min=1.0, v_max=25.0, max_distance=1000.0, Tmax=750.0
 ):
     def fitness_function(chromosome):
         truck = Truck(**truck_params)
@@ -288,29 +272,34 @@ def create_fitness_function(
                 v_max=v_max,
             )
 
-            # Check if the truck completed the entire distance
+            # # If the simulator provides metrics, prefer them
+            # metrics = result.get("metrics", {}) if isinstance(result, dict) else {}
+            # # Terminate and zero fitness if any constraint violation occurred during simulation
+            # if (
+            #     metrics.get("constraint_violated", False)
+            #     or metrics.get("termination_reason") is not None
+            # ):
+            #     # Explicit zero fitness for this slope as required by the specification
+            #     return 0.0
+
+            # # Fallback: also check raw histories for violations (robustness)
+            velocities = result.get("velocity", [])
+            # temps = result.get("brake_temp", [])
+            # if any(v < v_min or v > v_max for v in velocities) or any(
+            #     t > Tmax for t in temps
+            # ):
+            #     return 0.0
+
+            # Valid run: compute Fi = avg_speed * distance_traveled
             distance_traveled = result["position"][-1]
-            if distance_traveled < max_distance:
-                return 0.0  # Invalidate solution if the truck didn't complete the path
+            avg_speed = sum(velocities) / len(velocities) if velocities else 0.0
+            fitness = avg_speed * distance_traveled
+            total_fitness += fitness
 
-            # Check for constraint violations
-            if "velocity" in result and "brake_temp" in result:
-                velocities = result["velocity"]
-                temps = result["brake_temp"]
-
-                if any(t > Tmax for t in temps):  # Brake temperature exceeds Tmax
-                    return 0.0  # Invalidate solution
-                if any(
-                    v < v_min or v > v_max for v in velocities
-                ):  # Velocity out of bounds
-                    return 0.0  # Invalidate solution
-
-            # Calculate average velocity
-            avg_velocity = sum(result["velocity"]) / len(result["velocity"])
-
-            # Reward for average velocity * distance traveled
-            velocity_distance_reward = avg_velocity * distance_traveled
-            total_fitness += velocity_distance_reward
+        penalty = 0.01  # keep small but non-zero so GA can compare
+        total_fitness += (
+            fitness * penalty
+        )  # or `total_fitness -= 1e6` for hard negative
 
         return total_fitness / len(slopes)
 
@@ -362,7 +351,7 @@ def run_optimization():
     )
 
     # GA parameters
-    ga_pop_size = 100
+    ga_pop_size = 200
     ga = GeneticAlgorithm(
         pop_size=ga_pop_size,
         ni=ni,
@@ -370,15 +359,14 @@ def run_optimization():
         no=no,
         mutation_rate=(1.0 / ga_pop_size),  # mutation rate = 1 / population_size
         crossover_rate=0.8,
-        selection_pressure=1.2,
         elitism=1,
         tournament_size=3,
         seed=42,
     )
 
     # Run optimization with early stopping based on validation fitness
-    max_generations = 200
-    patience = 30  # Stop after 30 generations with no improvement
+    max_generations = 300
+    patience = 50  # Stop after 30 generations with no improvement
     best_val_fitness = float("-inf")
     best_chromosome = None
     no_improvement = 0

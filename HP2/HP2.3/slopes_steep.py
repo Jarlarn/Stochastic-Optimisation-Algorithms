@@ -1,6 +1,6 @@
 import math
 
-ALPHA_MAX = 15.0  # degrees (maximum allowed slope angle, increased for steeper slopes)
+ALPHA_MAX = 10.0  # degrees (maximum allowed slope angle, increased for steeper slopes)
 SLOPE_LENGTH = 1000.0  # horizontal length of every slope [m]
 
 
