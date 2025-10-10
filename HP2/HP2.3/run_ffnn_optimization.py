@@ -6,7 +6,7 @@ import os
 from typing import List, Dict, Tuple, Callable, Any, Optional
 import matplotlib.pyplot as plt
 import logging
-
+import math
 from truck_model import Truck
 from nn_controller import create_controller_from_chromosome, SIGMOID_C
 
@@ -259,6 +259,10 @@ def create_fitness_function(
         truck = Truck(**truck_params)
         total_fitness = 0.0
 
+        # Tunable coefficients
+        temp_penalty_k = 4.0  # larger -> heavier penalty for overheating
+        speed_bonus_weight = 0.25  # relative extra reward for running faster (0..1)
+
         for slope_idx, data_set_idx in slopes:
             controller = create_controller_from_chromosome(chromosome)
             truck.reset(position=0.0, velocity=20.0, gear=7, tb_total=500.0)
@@ -272,35 +276,43 @@ def create_fitness_function(
                 v_max=v_max,
             )
 
-            # # If the simulator provides metrics, prefer them
-            # metrics = result.get("metrics", {}) if isinstance(result, dict) else {}
-            # # Terminate and zero fitness if any constraint violation occurred during simulation
-            # if (
-            #     metrics.get("constraint_violated", False)
-            #     or metrics.get("termination_reason") is not None
-            # ):
-            #     # Explicit zero fitness for this slope as required by the specification
-            #     return 0.0
-
-            # # Fallback: also check raw histories for violations (robustness)
+            # Prefer simulator metrics when available
+            metrics = result.get("metrics", {}) if isinstance(result, dict) else {}
             velocities = result.get("velocity", [])
-            # temps = result.get("brake_temp", [])
-            # if any(v < v_min or v > v_max for v in velocities) or any(
-            #     t > Tmax for t in temps
-            # ):
-            #     return 0.0
+            temps = result.get("brake_temp", [])
 
-            # Valid run: compute Fi = avg_speed * distance_traveled
             distance_traveled = result["position"][-1]
             avg_speed = sum(velocities) / len(velocities) if velocities else 0.0
-            fitness = avg_speed * distance_traveled
-            total_fitness += fitness
+            base_fi = avg_speed * distance_traveled
 
-        penalty = 0.01  # keep small but non-zero so GA can compare
-        total_fitness += (
-            fitness * penalty
-        )  # or `total_fitness -= 1e6` for hard negative
+            # Compute maximum brake temperature observed (robust fallback)
+            max_tb = max(temps) if temps else truck_params.get("max_brake_temp", Tmax)
 
+            # If a constraint was violated we still terminate that run (simulator does that)
+            # but apply a soft penalty instead of forcing fitness to zero.
+            if metrics.get("constraint_violated", False) or metrics.get(
+                "termination_reason", None
+            ) in ("v_max_exceeded", "v_min_violated", "brake_temp_exceeded"):
+                # normalized excess (>=0)
+                excess = max(0.0, max_tb - Tmax) / Tmax
+                # soft multiplicative penalty: exp(-k * excess)
+                penalty = math.exp(-temp_penalty_k * excess)
+            else:
+                penalty = 1.0
+
+            # Small continuous penalty for approaching Tmax even when not exceeded
+            # (encourages controllers that manage temperature proactively)
+            pre_excess = max(0.0, max_tb - 0.9 * Tmax) / Tmax
+            precaution = math.exp(-2.0 * pre_excess)
+
+            # Speed bonus: reward keeping higher average speed (encourage less fear)
+            speed_bonus = 1.0 + speed_bonus_weight * (avg_speed / v_max)
+
+            fitness_i = base_fi * penalty * precaution * speed_bonus
+
+            total_fitness += fitness_i
+
+        # Average across slopes so fitness scale is stable
         return total_fitness / len(slopes)
 
     return fitness_function
