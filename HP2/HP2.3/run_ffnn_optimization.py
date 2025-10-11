@@ -262,7 +262,7 @@ def create_fitness_function(
         # Tunable coefficients
         temp_penalty_k = 2.0  # Penalty for overheating brakes
         speed_bonus_weight = 0.2  # Reward for higher average speed
-        pedal_reward_weight = 3  # Reward for using the pedal near V_max
+        pedal_reward_weight = 8  # Reward for using the pedal near V_max
 
         for slope_idx, data_set_idx in slopes:
             controller = create_controller_from_chromosome(chromosome)
@@ -297,7 +297,7 @@ def create_fitness_function(
                 excess = max(0.0, max_tb - Tmax) / Tmax
                 v_excess = max(0.0, max(velocities) - v_max) / v_max  # Velocity excess
                 penalty = math.exp(-temp_penalty_k * excess) * math.exp(
-                    -5.0 * v_excess
+                    -15.0 * v_excess
                 )  # Increase velocity penalty
             else:
                 penalty = 1.0
@@ -311,7 +311,9 @@ def create_fitness_function(
             # Speed bonus: reward higher average speed
             speed_bonus = 1.0 + speed_bonus_weight * (avg_speed / v_max)
 
-            fitness_i = base_fi * penalty * speed_bonus + pedal_reward
+            timesteps_above_vmax = sum(1 for v in velocities if v > v_max)
+            time_penalty = math.exp(-0.05 * timesteps_above_vmax)
+            fitness_i = base_fi * penalty * speed_bonus * time_penalty + pedal_reward
 
             total_fitness += fitness_i
 
@@ -376,7 +378,6 @@ def run_optimization():
         crossover_rate=0.8,
         elitism=1,
         tournament_size=3,
-        seed=42,
     )
 
     # Run optimization with early stopping based on validation fitness
@@ -415,7 +416,7 @@ def run_optimization():
             no_improvement = 0  # Reset counter when improvement found
 
             # Save best chromosome as Python file
-            with open("best_chromosome.py", "w") as f:
+            with open("best_chromosome2.py", "w") as f:
                 f.write("# Best chromosome found through GA optimization\n")
                 f.write(f"CHROMOSOME = {best_chromosome}\n")
                 f.write(f"NI = {ni}  # Number of inputs\n")
@@ -460,7 +461,7 @@ def run_optimization():
         # Save checkpoint every checkpoint_interval generations
         if gen % checkpoint_interval == 0:
             # Save best chromosome as Python file with timestamp
-            with open(f"checkpoints/checkpoint_gen{gen}.py", "w") as f:
+            with open(f"checkpoints2/checkpoint_gen{gen}.py", "w") as f:
                 f.write("# Checkpoint chromosome from GA optimization\n")
                 f.write(f"CHROMOSOME = {ga.best_individual}\n")
                 f.write(f"NI = {ni}  # Number of inputs\n")

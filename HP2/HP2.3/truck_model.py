@@ -322,16 +322,12 @@ class Truck:
         elif step_count >= MAX_SIMULATION_STEPS:
             termination_reason = "max_steps"
 
-        # Calculate fitness metrics
         distance_traveled = self.position
         time_elapsed = self.time
 
         # Calculate average speed (excluding initial zero velocity if present)
         velocities = [v for v in history["velocity"] if v > 0]
         avg_speed = sum(velocities) / len(velocities) if velocities else 0
-
-        # Calculate fitness: F_i = v̄_i * d_i
-        fitness = avg_speed * distance_traveled
 
         # Add metrics to the result
         result = {
@@ -340,7 +336,6 @@ class Truck:
                 "distance_traveled": distance_traveled,
                 "time_elapsed": time_elapsed,
                 "avg_speed": avg_speed,
-                "fitness": fitness,
                 "constraint_violated": constraint_violated,
                 "termination_reason": termination_reason,
                 "completed_slope": self.position >= max_distance,
@@ -364,46 +359,3 @@ class Truck:
             self._gear = Gear(self._gear.value + 1)
         elif gear_change < 0 and self._gear.value > 1:  # Shift down
             self._gear = Gear(self._gear.value - 1)
-
-
-def demo():
-    truck = Truck(mass=3000, base_engine_brake_coeff=100.0)
-    print("Gear Factor EngBrake")
-    for g in Gear:
-        truck.set_gear(g)
-        print(f"{g.value:>4} {g.factor:>6} {truck.current_engine_brake():>8.1f}")
-
-    # Example net force sample
-    x = 100.0
-    nf = truck.net_force(x, slope_index=1, data_set_index=1, pedal=0.5)
-    print("Net force sample:", nf)
-
-    # Simple controller for demo
-    def simple_controller(position, velocity, brake_temp, slope_angle, gear):
-        # Apply brakes proportional to velocity over threshold
-        target_speed = 15.0
-        if velocity > target_speed:
-            pedal = min(1.0, (velocity - target_speed) / 10.0)
-        else:
-            pedal = 0.0
-        return pedal, gear
-
-    # Run a short simulation
-    print("\nRunning simple simulation...")
-    truck.reset()
-    history = truck.simulate(
-        controller=simple_controller,
-        slope_index=0,
-        data_set_index=0,
-        max_distance=1000.0,
-    )
-
-    # Print some stats
-    print(f"Final position: {history['position'][-1]:.1f} m")
-    print(f"Final velocity: {history['velocity'][-1]:.1f} m/s")
-    print(f"Max temperature: {max(history['brake_temp']):.1f} °C")
-    print(f"Simulation time: {history['time'][-1]:.1f} s")
-
-
-if __name__ == "__main__":
-    demo()
