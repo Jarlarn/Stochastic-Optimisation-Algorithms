@@ -149,6 +149,10 @@ class NeuralNetworkController:
         if velocity < 2.0 * V_MIN and gear_change == -1:
             gear_change = 0  # Prevent downshift
 
+        # Prioritize downshifting when velocity approaches V_max
+        if velocity > 0.85 * V_MAX and gear > 1:
+            gear_change = -1  # Force downshift to increase engine braking
+
         # Apply time constraint to gear changes
         if not hasattr(self, "last_gear_change_time"):
             self.last_gear_change_time = -float("inf")

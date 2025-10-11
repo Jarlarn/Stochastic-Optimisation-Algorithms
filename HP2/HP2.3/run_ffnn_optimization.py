@@ -260,8 +260,9 @@ def create_fitness_function(
         total_fitness = 0.0
 
         # Tunable coefficients
-        temp_penalty_k = 4.0  # larger -> heavier penalty for overheating
-        speed_bonus_weight = 0.25  # relative extra reward for running faster (0..1)
+        temp_penalty_k = 2.0  # Penalty for overheating brakes
+        speed_bonus_weight = 0.2  # Reward for higher average speed
+        pedal_reward_weight = 3  # Reward for using the pedal near V_max
 
         for slope_idx, data_set_idx in slopes:
             controller = create_controller_from_chromosome(chromosome)
@@ -279,40 +280,42 @@ def create_fitness_function(
             # Prefer simulator metrics when available
             metrics = result.get("metrics", {}) if isinstance(result, dict) else {}
             velocities = result.get("velocity", [])
+            pedals = result.get("pedal", [])
             temps = result.get("brake_temp", [])
 
             distance_traveled = result["position"][-1]
             avg_speed = sum(velocities) / len(velocities) if velocities else 0.0
             base_fi = avg_speed * distance_traveled
 
-            # Compute maximum brake temperature observed (robust fallback)
+            # Compute maximum brake temperature observed
             max_tb = max(temps) if temps else truck_params.get("max_brake_temp", Tmax)
 
-            # If a constraint was violated we still terminate that run (simulator does that)
-            # but apply a soft penalty instead of forcing fitness to zero.
+            # Penalty for constraint violations
             if metrics.get("constraint_violated", False) or metrics.get(
                 "termination_reason", None
             ) in ("v_max_exceeded", "v_min_violated", "brake_temp_exceeded"):
-                # normalized excess (>=0)
                 excess = max(0.0, max_tb - Tmax) / Tmax
-                # soft multiplicative penalty: exp(-k * excess)
-                penalty = math.exp(-temp_penalty_k * excess)
+                v_excess = max(0.0, max(velocities) - v_max) / v_max  # Velocity excess
+                penalty = math.exp(-temp_penalty_k * excess) * math.exp(
+                    -5.0 * v_excess
+                )  # Increase velocity penalty
             else:
                 penalty = 1.0
 
-            # Small continuous penalty for approaching Tmax even when not exceeded
-            # (encourages controllers that manage temperature proactively)
-            pre_excess = max(0.0, max_tb - 0.9 * Tmax) / Tmax
-            precaution = math.exp(-2.0 * pre_excess)
+            # Reward for pedal usage near V_max
+            pedal_reward = 0.0
+            for v, pedal in zip(velocities, pedals):
+                if v > 0.9 * v_max:  # Near V_max
+                    pedal_reward += pedal * pedal_reward_weight
 
-            # Speed bonus: reward keeping higher average speed (encourage less fear)
+            # Speed bonus: reward higher average speed
             speed_bonus = 1.0 + speed_bonus_weight * (avg_speed / v_max)
 
-            fitness_i = base_fi * penalty * precaution * speed_bonus
+            fitness_i = base_fi * penalty * speed_bonus + pedal_reward
 
             total_fitness += fitness_i
 
-        # Average across slopes so fitness scale is stable
+        # Average across slopes
         return total_fitness / len(slopes)
 
     return fitness_function
@@ -361,15 +364,15 @@ def run_optimization():
         v_max=vmax,
         max_distance=1000.0,
     )
-
     # GA parameters
-    ga_pop_size = 200
+    chromosome_length = nh * (ni + 1) + no * (nh + 1)
+    ga_pop_size = 300
     ga = GeneticAlgorithm(
         pop_size=ga_pop_size,
         ni=ni,
         nh=nh,
         no=no,
-        mutation_rate=(1.0 / ga_pop_size),  # mutation rate = 1 / population_size
+        mutation_rate=(1.0 / chromosome_length),  # mutation rate = 1 / population_size
         crossover_rate=0.8,
         elitism=1,
         tournament_size=3,
@@ -377,11 +380,14 @@ def run_optimization():
     )
 
     # Run optimization with early stopping based on validation fitness
-    max_generations = 300
-    patience = 50  # Stop after 30 generations with no improvement
+    max_generations = 200
+    patience = 200  # Stop after 30 generations with no improvement
     best_val_fitness = float("-inf")
     best_chromosome = None
     no_improvement = 0
+
+    # New: record validation fitness per evaluated generation for plotting
+    validation_history = []
 
     checkpoint_interval = 10  # Save best chromosome every 10 generations
     report_interval = 5  # Print detailed stats every 5 generations
@@ -398,6 +404,9 @@ def run_optimization():
 
         # Evaluate best chromosome on validation set
         val_fitness = fitness_val(ga.best_individual)
+
+        # Record validation fitness (per generation)
+        validation_history.append(val_fitness)
 
         # Check for improvement
         if val_fitness > best_val_fitness:
@@ -476,6 +485,28 @@ def run_optimization():
             f.write(f"NO = {no}\n")
             f.write(f"SIGMOID_C = {SIGMOID_C}\n")
             f.write(f"TRAINING_FITNESS = {ga.best_fitness}\n")
+
+    # Plot training max and validation fitness vs generations
+    try:
+        plt.figure(figsize=(10, 6))
+        gens = list(range(len(ga.best_fitness_history)))
+        plt.plot(
+            gens, ga.best_fitness_history, "-b", label="Training: max fitness (per gen)"
+        )
+        plt.plot(
+            gens, validation_history, "-r", label="Validation: best individual fitness"
+        )
+        plt.xlabel("Generation")
+        plt.ylabel("Fitness")
+        plt.title("GA fitness: training max and validation fitness vs generation")
+        plt.grid(True)
+        plt.legend()
+        plt.tight_layout()
+        plt.savefig("fitness_history.png")
+        print("Saved fitness history plot to fitness_history.png")
+        plt.show()
+    except Exception as e:
+        print("Could not plot fitness history:", e)
 
 
 run_optimization()
