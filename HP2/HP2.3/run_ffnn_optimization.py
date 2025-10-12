@@ -416,7 +416,7 @@ def run_optimization():
             no_improvement = 0  # Reset counter when improvement found
 
             # Save best chromosome as Python file
-            with open("best_chromosome2.py", "w") as f:
+            with open("best_chromosome.py", "w") as f:
                 f.write("# Best chromosome found through GA optimization\n")
                 f.write(f"CHROMOSOME = {best_chromosome}\n")
                 f.write(f"NI = {ni}  # Number of inputs\n")

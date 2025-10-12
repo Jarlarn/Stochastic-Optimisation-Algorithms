@@ -204,3 +204,8 @@ def load_function_data():
   ]
 
   return samples
+
+# Add these module-level variables so other modules can use function_data.XS and function_data.YS
+_samples = load_function_data()
+XS = [p[0] for p in _samples]
+YS = [p[1] for p in _samples]

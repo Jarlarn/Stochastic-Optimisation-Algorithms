@@ -46,14 +46,14 @@ def main():
         description="Run best chromosome on a slope and plot results"
     )
     p.add_argument(
-        "--slope", type=int, default=8, help="Slope index to run (default: 0)"
+        "--slope", type=int, default=3, help="Slope index to run (default: 0)"
     )
     p.add_argument(
-        "--data-set", type=int, default=1, help="Data set index (default: 3 = test set)"
+        "--data-set", type=int, default=3, help="Data set index (default: 3 = test set)"
     )
     p.add_argument(
         "--best-py",
-        default="best_chromosome2.py",
+        default="best_chromosome.py",
         help="Python module with best chromosome",
     )
     p.add_argument(
