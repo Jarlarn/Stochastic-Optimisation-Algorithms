@@ -4,7 +4,7 @@ from typing import List, Tuple, Dict, Any, Optional, Callable
 from run_encoding_decoding_test import decode_chromosome
 
 # Default weight range used for encoding/decoding
-W_MAX = 5.0
+W_MAX = 10.0
 
 # Constants for truck control (matching assignment specs)
 V_MAX = 25.0  # m/s

@@ -1,5 +1,5 @@
 import math
-from best_chromosome2 import CHROMOSOME, VARIABLE_REGS, CONST_VALUES, OPERATORS
+from best_chromosome import CHROMOSOME, VARIABLE_REGS, CONST_VALUES, OPERATORS
 import function_data
 from typing import List
 import sympy as sp

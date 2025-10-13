@@ -3,7 +3,7 @@ from typing import List, Tuple
 
 # ---------------- Configuration (can be overridden by CLI) ----------------
 DEFAULTS = dict(
-    POP_SIZE=800,  # Increased from 600
+    POP_SIZE=250,  # Increased from 600
     MAX_GEN=3000,  # Increased from 1500
     TOURNAMENT_SIZE=4,  # Reduced from 7
     MUTATE_GENE_PROB=0.04,
@@ -36,32 +36,32 @@ def parse_args():
     return p.parse_args()
 
 
-def mutation_probability_change(
-    previous_mutation_probability,
-    all_maximum_fitnesses,
-    number_of_instructions,
-    time_window_size,
-    probability_change_factor=2.0,
+def adaptive_mutation_rate(
+    stagnation_count,
+    best_rmse,
+    base_mutation_prob,
 ):
-    initial_mutation_probability = 1.0 / (number_of_instructions * 4)
-    if len(all_maximum_fitnesses) < time_window_size:
-        new_mutation_probability = previous_mutation_probability
-    else:
-        fitness_difference = (
-            all_maximum_fitnesses[-1] - all_maximum_fitnesses[-time_window_size]
-        )
-        if fitness_difference > 1e-6:
-            new_mutation_probability = (
-                previous_mutation_probability
-                / probability_change_factor  # Changed to division
-            )
-        elif fitness_difference < 1e-12:
-            new_mutation_probability = initial_mutation_probability * 1.5
-        else:
-            new_mutation_probability = initial_mutation_probability
+    """
+    Two-factor adaptive mutation:
+    1. Stagnation-based: Increase if stagnated for too long
+    2. Error-based: Scale based on current error level
+    """
+    # Factor 1: Stagnation-based adaptation
+    stagnation_factor = 1.0
+    if stagnation_count > 75:
+        # Progressively increase mutation rate with prolonged stagnation
+        stagnation_factor = 1.0 + min(3.0, stagnation_count / 75)
 
-    # Bound mutation probability to reasonable range
-    return max(0.01, min(0.2, new_mutation_probability))
+    # Factor 2: Error-based adaptation
+    # Higher error = higher mutation, lower error = lower mutation
+    # Scale between 0.5x and 2.0x based on error
+    error_factor = min(2.0, max(0.5, best_rmse * 5.0))
+
+    # Combined adaptive rate (bounded)
+    new_prob = base_mutation_prob * stagnation_factor * error_factor
+
+    # Ensure mutation rate stays within reasonable bounds
+    return max(0.01, min(0.25, new_prob))
 
 
 # ---------------- LGP Components ----------------
@@ -346,12 +346,16 @@ class LGP:
         start_time = time.time()
         best_fit = -1.0
         best_rmse = float("inf")
+        previous_best_rmse = float("inf")
         best_chrom = None
         all_maximum_fitnesses = []
         mutation_prob = self.cfg.MUTATE_GENE_PROB
-        time_window_size = 20
+        base_mutation_prob = self.cfg.MUTATE_GENE_PROB
 
-        while True:
+        # Threshold for significant improvement (0.5% improvement)
+        significant_improvement_threshold = 0.05
+
+        while gen < self.cfg.MAX_GEN:
             gen += 1
             fitness_cache.clear()
             fits = []
@@ -366,16 +370,42 @@ class LGP:
             min_rmse = min(rmses)
             all_maximum_fitnesses.append(max_fit)
 
-            if max_fit > best_fit:
-                best_fit = max_fit
+            # Check if improvement is significant
+            is_significant_improvement = False
+            if min_rmse < best_rmse:
+                # Calculate relative improvement
+                if best_rmse != float("inf"):
+                    relative_improvement = (best_rmse - min_rmse) / best_rmse
+                    is_significant_improvement = (
+                        relative_improvement > significant_improvement_threshold
+                    )
+                else:
+                    # First valid solution found is always significant
+                    is_significant_improvement = True
+
+                # Always update best solution, but only reset stagnation for significant improvements
+                previous_best_rmse = best_rmse
                 best_rmse = min_rmse
+                best_fit = max_fit
                 best_chrom = population[fits.index(max_fit)][:]
-                stagnation = 0
                 self.save_best(best_chrom, best_rmse)
+
+                # Only reset stagnation if improvement was significant
+                if is_significant_improvement:
+                    stagnation = 0
+                else:
+                    stagnation += 1
             else:
                 stagnation += 1
 
-            # Restart if stagnant for too long
+            # Apply adaptive mutation
+            mutation_prob = adaptive_mutation_rate(
+                stagnation,
+                best_rmse,
+                base_mutation_prob,
+            )
+
+            # Restart if stagnant for too long (keep this existing mechanism)
             if stagnation >= self.cfg.RESTART_AFTER_STAGNATION:
                 print(f"Restarting after {stagnation} generations of stagnation...")
                 # Keep 10% of current population
@@ -393,7 +423,7 @@ class LGP:
                 population = elite + new_pop
                 stagnation = 0
                 mutation_prob = (
-                    self.cfg.MUTATE_GENE_PROB * 2
+                    base_mutation_prob * 2.0
                 )  # Higher mutation after restart
                 fitness_cache.clear()
 
@@ -422,21 +452,12 @@ class LGP:
 
             if gen == 1 or gen % 25 == 0:
                 print(
-                    f"Gen {gen:4d}  RMSE={best_rmse:.3e}  len={len(best_chrom)//INSTR_LEN if best_chrom else 0:3d} instr  fitness={best_fit:.3e}  stagnation={stagnation}"
+                    f"Gen {gen:4d}  RMSE={best_rmse:.3e}  len={len(best_chrom)//INSTR_LEN if best_chrom else 0:3d} instr  fitness={best_fit:.3e}  stagnation={stagnation}  mutation={mutation_prob:.4f}"
                 )
 
             if best_rmse <= self.cfg.TARGET_RMSE:
                 print(f"Early stop: target RMSE reached at generation {gen}.")
                 break
-
-            # Adaptive mutation probability
-            mutation_prob = mutation_probability_change(
-                mutation_prob,
-                all_maximum_fitnesses,
-                number_of_instructions=len(population[0]) // INSTR_LEN,
-                time_window_size=time_window_size,
-                probability_change_factor=2.0,
-            )
 
             # Selection and reproduction
             new_population = []

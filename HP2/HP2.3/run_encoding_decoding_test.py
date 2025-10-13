@@ -73,7 +73,7 @@ def decode_chromosome(chromosome, n_i, n_h, n_o, w_max):
 
 # The maximum (absolute) value of weights and biases. Thus, they take values in
 # the range [-w_max,w_max]
-w_max = 5
+w_max = 10
 
 # Sample network of size 3-3-2. Note the the number of rows in w_ih MUST be
 # equal to the number of columns in w_ho, minus 1; see also the definition of nH below.
