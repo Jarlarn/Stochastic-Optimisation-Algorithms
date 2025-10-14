@@ -1,16 +1,15 @@
 import math
-from best_chromosome import CHROMOSOME, VARIABLE_REGS, CONST_VALUES, OPERATORS
+from best_chromosome_4 import BEST_CHROMOSOME, VARIABLE_REGS, CONSTANTS
 import function_data
 from typing import List
 import sympy as sp
 import matplotlib.pyplot as plt
 import run_lgp
 
+OPERATORS = ["+", "-", "*", "/"]
+
 # replace direct access with a robust loader (works whether function_data exposes XS/YS or provides loader)
-if hasattr(function_data, "XS") and hasattr(function_data, "YS"):
-    XS = list(function_data.XS)
-    YS = list(function_data.YS)
-elif hasattr(function_data, "load_function_data"):
+if hasattr(function_data, "load_function_data"):
     _pairs = function_data.load_function_data()
     XS = [p[0] for p in _pairs]
     YS = [p[1] for p in _pairs]
@@ -18,14 +17,14 @@ else:
     raise AttributeError("function_data must define XS & YS or load_function_data()")
 
 x = sp.Symbol("x")
-TOTAL_REGS = VARIABLE_REGS + len(CONST_VALUES)
+TOTAL_REGS = VARIABLE_REGS + len(CONSTANTS)
 PROTECTED_DIV_EPS = getattr(run_lgp, "PROTECTED_DIV_EPS", 1e-12)
 INSTR_LEN = 4
 
 
 def validate_chromosome(chrom):
     if len(chrom) % INSTR_LEN != 0:
-        raise ValueError("CHROMOSOME length must be multiple of 4")
+        raise ValueError("BEST_CHROMOSOME length must be multiple of 4")
     total = TOTAL_REGS
     for i in range(0, len(chrom), INSTR_LEN):
         op, dest, s1, s2 = chrom[i : i + INSTR_LEN]
@@ -49,8 +48,8 @@ def chromosome_symbolic_expression(chrom) -> sp.Expr:
     regs[0] = x
     for i in range(0, len(chrom), INSTR_LEN):
         op, dest, s1, s2 = chrom[i : i + INSTR_LEN]
-        a = regs[s1] if s1 < VARIABLE_REGS else CONST_VALUES[s1 - VARIABLE_REGS]
-        b = regs[s2] if s2 < VARIABLE_REGS else CONST_VALUES[s2 - VARIABLE_REGS]
+        a = regs[s1] if s1 < VARIABLE_REGS else CONSTANTS[s1 - VARIABLE_REGS]
+        b = regs[s2] if s2 < VARIABLE_REGS else CONSTANTS[s2 - VARIABLE_REGS]
         code = OPERATORS[op]
         if code == "+":
             v = a + b
@@ -59,7 +58,6 @@ def chromosome_symbolic_expression(chrom) -> sp.Expr:
         elif code == "*":
             v = a * b
         else:
-            # protected symbolic division: handle numeric and symbolic zero safely
             try:
                 is_number = getattr(b, "is_Number", False) or isinstance(
                     b, (int, float)
@@ -74,7 +72,6 @@ def chromosome_symbolic_expression(chrom) -> sp.Expr:
                     else:
                         v = a / b
                 else:
-                    # for symbolic expressions, treat exact zero as protected
                     if sp.simplify(b) == 0:
                         v = a
                     else:
@@ -82,10 +79,9 @@ def chromosome_symbolic_expression(chrom) -> sp.Expr:
             except ZeroDivisionError:
                 v = a
             except Exception:
-                # fallback protection for unexpected symbolic issues
                 v = a
-        regs[dest] = sp.simplify(v)
-    return sp.simplify(regs[0])
+        regs[dest] = v  # <-- Remove sp.simplify here
+    return regs[0]  # Skip simplification for speed
 
 
 def rational_polynomial_form(expr: sp.Expr):
@@ -123,8 +119,8 @@ def evaluate(chrom):
         regs[0] = x_val
         for i in range(0, len(chrom), INSTR_LEN):
             op, dst, s1, s2 = chrom[i : i + INSTR_LEN]
-            a = regs[s1] if s1 < VARIABLE_REGS else CONST_VALUES[s1 - VARIABLE_REGS]
-            b = regs[s2] if s2 < VARIABLE_REGS else CONST_VALUES[s2 - VARIABLE_REGS]
+            a = regs[s1] if s1 < VARIABLE_REGS else CONSTANTS[s1 - VARIABLE_REGS]
+            b = regs[s2] if s2 < VARIABLE_REGS else CONSTANTS[s2 - VARIABLE_REGS]
             if OPERATORS[op] == "+":
                 v = a + b
             elif OPERATORS[op] == "-":
@@ -143,13 +139,20 @@ def rmse(preds):
 
 
 if __name__ == "__main__":
-    expr = chromosome_symbolic_expression(CHROMOSOME)
+    print("Starting evaluation...")
+    print("Validating chromosome...")
+    validate_chromosome(BEST_CHROMOSOME)
+    print("Chromosome validated.")
+    print("Building symbolic expression...")
+    expr = chromosome_symbolic_expression(BEST_CHROMOSOME)
+    print("Symbolic expression computed.")
     g_str, num_poly, den_poly = rational_polynomial_form(expr)
-    preds = evaluate(CHROMOSOME)
+    print("Rational polynomial form computed.")
+    preds = evaluate(BEST_CHROMOSOME)
+    print("Predictions computed.")
     error = rmse(preds)
     print(g_str)
     print(f"RMSE: {error:.6e}")
-    # sort for plotting the fitted curve
     pairs = sorted(zip(XS, preds))
     xs_sorted, preds_sorted = zip(*pairs)
     plt.scatter(XS, YS, s=20, label="Data")
@@ -158,4 +161,6 @@ if __name__ == "__main__":
     plt.xlabel("x")
     plt.ylabel("y")
     plt.title("LGP Fit")
+    print("Ready to show plot.")
     plt.show()
+    print("Plot closed.")
