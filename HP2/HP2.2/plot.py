@@ -1,6 +1,5 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D  # noqa: F401 (needed for 3D projection)
 
 
 def himmelblau(x, y):
@@ -8,13 +7,11 @@ def himmelblau(x, y):
 
 
 def main():
-    # Grid
     x = np.linspace(-6, 6, 600)
     y = np.linspace(-6, 6, 600)
     X, Y = np.meshgrid(x, y)
     Z = himmelblau(X, Y)
 
-    # 2D contour plot
     plt.figure(figsize=(7, 6))
     levels = np.logspace(0, 5, 35, base=10)
     cs = plt.contour(X, Y, Z, levels=levels, cmap="viridis", linewidths=0.8)
@@ -25,14 +22,13 @@ def main():
     plt.xlabel("x1")
     plt.ylabel("x2")
 
-    # Mark known minima
-    minima = [
+    known_minima = [
         (3.0, 2.0),
         (-2.805118, 3.131312),
         (-3.779310, -3.283186),
         (3.584428, -1.848126),
     ]
-    for a, b in minima:
+    for a, b in known_minima:
         plt.plot(a, b, "r*", markersize=10)
         plt.text(
             a + 0.15,

@@ -1,5 +1,5 @@
 import math
-from TMP import BEST_CHROMOSOME, VARIABLE_REGISTER_COUNT, CONSTANTS
+from best_chromosome import BEST_CHROMOSOME, VARIABLE_REGISTER_COUNT, CONSTANTS
 import function_data
 from typing import List
 import sympy as sp
@@ -107,8 +107,8 @@ def rational_polynomial_form(expr: sp.Expr):
         parts = []
         for i, c in enumerate(coeffs):
             power = deg - i
-            if float(c) == 0.0:
-                continue  # Omit zero terms robustly
+            if c == 0:
+                continue
             term = f"{float(c):.6g}"
             if power >= 1:
                 term += "x" if power == 1 else f"x^{power}"
@@ -177,9 +177,6 @@ if __name__ == "__main__":
     plt.xlabel("x")
     plt.ylabel("y")
     plt.title("LGP Fit")
-    plt.savefig(
-        "LGP_fit.png", dpi=600, bbox_inches="tight"
-    )  # <-- Save the plot as LGP_fit.png
     print("Ready to show plot.")
     plt.show()
     print("Plot closed.")
