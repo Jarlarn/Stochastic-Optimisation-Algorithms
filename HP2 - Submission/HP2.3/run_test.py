@@ -1,5 +1,5 @@
 import argparse
-from typing import List, Dict, Any
+from typing import List, Dict
 
 import matplotlib.pyplot as plt
 
@@ -61,21 +61,6 @@ def main():
     )
     args = p.parse_args()
 
-    # Sanity check: sample slope angle at start/mid/end to detect constant/default slope
-    from slopes import get_slope_angle
-
-    a0 = get_slope_angle(0.0, args.slope, args.data_set)
-    a_mid = get_slope_angle(SLOPE_LENGTH / 2.0, args.slope, args.data_set)
-    a_end = get_slope_angle(SLOPE_LENGTH, args.slope, args.data_set)
-    print(
-        f"Sampled slope angles (deg) at x=0,mid,end: {a0:.3f}, {a_mid:.3f}, {a_end:.3f}"
-    )
-    if abs(a0 - a_mid) < 1e-6 and abs(a0 - a_end) < 1e-6:
-        print(
-            "Warning: sampled slope angles are constant — you may have selected an undefined slope index for this dataset."
-        )
-
-    # Load chromosome from Python module only
     import importlib.util, os
 
     if not os.path.exists(args.best_py):
@@ -85,18 +70,16 @@ def main():
         return
     spec = importlib.util.spec_from_file_location("best_chromosome", args.best_py)
     mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)  # type: ignore
+    spec.loader.exec_module(mod)
     chromosome = mod.CHROMOSOME
     ni = getattr(mod, "NI", 3)
     nh = getattr(mod, "NH", 6)
     no = getattr(mod, "NO", 2)
     print(f"Loaded best chromosome from {args.best_py}")
 
-    # Create truck and controller
     truck = Truck(mass=20000.0, base_engine_brake_coeff=3000.0, max_brake_temp=750.0)
     controller = create_controller_from_chromosome(chromosome, ni, nh, no)
 
-    # Initialize truck state per assignment
     truck.reset(position=0.0, velocity=20.0, gear=7, tb_total=500.0)
 
     print(
@@ -110,7 +93,6 @@ def main():
         max_time=3600.0,
     )
 
-    # Report summary
     final_distance = history["position"][-1] if history["position"] else 0.0
     max_v = max(history["velocity"]) if history["velocity"] else 0.0
     max_tb = max(history["brake_temp"]) if history["brake_temp"] else 0.0

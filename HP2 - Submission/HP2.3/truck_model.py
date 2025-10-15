@@ -1,19 +1,17 @@
 import math
 from enum import IntEnum
-from typing import Final, Dict, List, Tuple, Any, Optional
-import numpy as np
+from typing import Final, Dict, Any
 from slopes import get_slope_angle
 
 GRAVITY: Final = 9.80665
 GEAR_FACTORS: Final = (7.0, 5.0, 4.0, 3.0, 2.5, 2.0, 1.6, 1.4, 1.2, 1.0)
 
-# Truck model constants
-DEFAULT_TEMP_COOLING_TAU = 30.0  # tau time constant for cooling [s] (assignment)
-DEFAULT_TEMP_HEATING_CH = 40.0  # Ch heating coefficient [K/s] (assignment)
-DEFAULT_AMBIENT_TEMP = 283.0  # Ambient temperature [K] (assignment)
-DEFAULT_MAX_BRAKE_TEMP = 750.0  # Maximum allowable brake temp [K] (assignment)
-DEFAULT_TIME_STEP = 0.1  # Default simulation time step [s]
-MAX_SIMULATION_STEPS = 100000  # Safety limit for simulation steps
+DEFAULT_TEMP_COOLING_TAU = 30.0
+DEFAULT_TEMP_HEATING_CH = 40.0
+DEFAULT_AMBIENT_TEMP = 283.0
+DEFAULT_MAX_BRAKE_TEMP = 750.0
+DEFAULT_TIME_STEP = 0.1
+MAX_SIMULATION_STEPS = 100000
 
 
 class Gear(IntEnum):
@@ -40,18 +38,6 @@ def engine_brake_force(base_coeff: float, gear: Gear) -> float:
 def foundation_brake_force(
     mass: float, pedal: float, brake_temp: float, max_brake_temp: float
 ) -> float:
-    """
-    Calculate the foundation brake force based on pedal pressure, mass, and brake temperature.
-
-    Args:
-        mass: Truck mass [kg]
-        pedal: Brake pedal pressure [0,1]
-        brake_temp: Current brake temperature [K]
-        max_brake_temp: Maximum allowable brake temperature [K]
-
-    Returns:
-        Brake force [N]
-    """
     pedal = max(0.0, min(1.0, pedal))
     mg_over_20 = mass * GRAVITY / 20.0
     threshold = max_brake_temp - 100.0
@@ -59,7 +45,6 @@ def foundation_brake_force(
     if brake_temp < threshold:
         return mg_over_20 * pedal
 
-    # Exponential decay for brake force above threshold
     return mg_over_20 * pedal * math.exp(-(brake_temp - threshold) / 100.0)
 
 
@@ -86,8 +71,7 @@ class Truck:
         self.temp_heating_ch = float(temp_heating_ch)
         self.ambient_temp = float(ambient_temp)
 
-        # State variables
-        self.delta_brake_temp = 0.0  # Temperature above ambient (ΔTb)
+        self.delta_brake_temp = 0.0
         self.position = 0.0
         self.velocity = 0.0
         self.dt = dt
@@ -103,7 +87,6 @@ class Truck:
 
     @property
     def brake_temp(self) -> float:
-        """Total brake temperature = ambient + delta"""
         return self.ambient_temp + self.delta_brake_temp
 
     def set_gear(self, gear) -> None:
@@ -114,11 +97,9 @@ class Truck:
         elif not isinstance(gear, Gear):
             raise TypeError("gear must be int or Gear")
 
-        # No-op if same gear
         if gear == self._gear:
             return
 
-        # Accept gear change immediately (no timing constraint)
         self._gear = gear
 
     def shift_up(self) -> None:
@@ -136,20 +117,16 @@ class Truck:
         gear: int = 1,
         tb_total=None,
     ) -> None:
-        """Reset truck to initial state. tb_total is absolute Tb in K; if None uses ambient."""
         self.position = position
         self.velocity = velocity
         self._gear = Gear(gear) if isinstance(gear, int) else gear
         if tb_total is None:
             self.delta_brake_temp = 0.0
         else:
-            # store ΔTb = Tb - Tamb, clamp >= 0
             self.delta_brake_temp = max(0.0, float(tb_total) - self.ambient_temp)
         self.time = 0.0
-        # mark last gear change at reset time so next shift must wait min interval
         self.last_gear_change_time = self.time
 
-    # Thin wrappers delegating to pure functions:
     def current_engine_brake(self) -> float:
         return engine_brake_force(self.base_engine_brake_coeff, self._gear)
 
@@ -169,46 +146,31 @@ class Truck:
     def net_force(
         self, x: float, slope_index: int, data_set_index: int, pedal: float
     ) -> float:
-        """
-        Positive direction: downhill.
-        F_net = F_gravity - (F_service + F_engine_brake)
-        """
         f_g = self.gravity_force(x, slope_index, data_set_index)
         f_sb = self.current_service_brake(pedal)
         f_eb = self.current_engine_brake()
         return f_g - (f_sb + f_eb)
 
     def update_temperature(self, pedal: float) -> None:
-        """Update brake temperature according to eq. 4"""
         if pedal < 0.01:
-            # Cooling
             d_temp = -self.delta_brake_temp / self.temp_cooling_tau
         else:
-            # Heating
             d_temp = self.temp_heating_ch * pedal
 
-        # Integrate temperature using first-order difference
         self.delta_brake_temp += d_temp * self.dt
 
-        # Temperature can't go below ambient
         self.delta_brake_temp = max(0.0, self.delta_brake_temp)
 
     def update_state(self, pedal: float, slope_index: int, data_set_index: int) -> None:
-        """Update truck state by one time step"""
-        # Calculate net force and acceleration
         f_net = self.net_force(self.position, slope_index, data_set_index, pedal)
         acceleration = f_net / self.mass
 
-        # Update velocity using first-order difference
         self.velocity += acceleration * self.dt
 
-        # Update position
         self.position += self.velocity * self.dt
 
-        # Update brake temperature
         self.update_temperature(pedal)
 
-        # Update time
         self.time += self.dt
 
     def simulate(
@@ -217,28 +179,11 @@ class Truck:
         slope_index: int,
         data_set_index: int,
         max_distance: float = 10000.0,
-        max_time: float = 3600.0,  # 1 hour max
-        auto_gear: bool = False,
-        v_min: float = 1.0,  # Minimum allowed velocity (m/s)
-        v_max: float = 25.0,  # Maximum allowed velocity (m/s)
+        max_time: float = 3600.0,
+        v_min: float = 1.0,
+        v_max: float = 25.0,
     ) -> Dict[str, Any]:
-        """
-        Simulate the truck's behavior over a slope using the given controller.
 
-        Args:
-            controller: Function to control the truck.
-            slope_index: Index of the slope.
-            data_set_index: Index of the data set.
-            max_distance: Maximum distance to simulate [m].
-            max_time: Maximum simulation time [s].
-            auto_gear: Whether to automatically adjust gears.
-            v_min: Minimum velocity [m/s].
-            v_max: Maximum velocity [m/s].
-
-        Returns:
-            Dictionary containing simulation results.
-        """
-        # Initialize history
         history = {
             "time": [self.time],
             "position": [self.position],
@@ -255,19 +200,17 @@ class Truck:
         constraint_violated = False
         termination_reason = "max_distance"
 
-        # Continue until we reach max distance, time, steps, or violate constraints
         while (
             self.position < max_distance
             and self.time < max_time
             and step_count < MAX_SIMULATION_STEPS
         ):
-            # Check constraints before controller is called
             if self.velocity > v_max:
                 constraint_violated = True
                 termination_reason = "v_max_exceeded"
                 break
 
-            if self.velocity < v_min and self.time > 5.0:  # Allow some startup time
+            if self.velocity < v_min and self.time > 5.0:
                 constraint_violated = True
                 termination_reason = "v_min_violated"
                 break
@@ -277,7 +220,6 @@ class Truck:
                 termination_reason = "brake_temp_exceeded"
                 break
 
-            # Get control inputs from controller
             control_inputs = controller(
                 position=self.position,
                 velocity=self.velocity,
@@ -286,24 +228,20 @@ class Truck:
                     self.position, slope_index, data_set_index
                 ),
                 gear=self._gear.value,
-                current_time=self.time,  # Pass current simulation time
+                current_time=self.time,
             )
 
-            # Unpack control
             if isinstance(control_inputs, tuple) and len(control_inputs) >= 2:
                 pedal, gear_change = control_inputs[0], control_inputs[1]
             else:
                 pedal = float(control_inputs)
-                gear_change = 0  # No change
+                gear_change = 0
 
-            # Apply gear control if provided
             if gear_change is not None:
                 self.apply_gear_change(gear_change)
 
-            # Update state
             self.update_state(pedal, slope_index, data_set_index)
 
-            # Record history
             history["time"].append(self.time)
             history["position"].append(self.position)
             history["velocity"].append(self.velocity)
@@ -316,7 +254,6 @@ class Truck:
 
             step_count += 1
 
-        # Check if we hit max time
         if self.time >= max_time:
             termination_reason = "max_time"
         elif step_count >= MAX_SIMULATION_STEPS:
@@ -325,13 +262,11 @@ class Truck:
         distance_traveled = self.position
         time_elapsed = self.time
 
-        # Calculate average speed (excluding initial zero velocity if present)
         velocities = [v for v in history["velocity"] if v > 0]
         avg_speed = sum(velocities) / len(velocities) if velocities else 0
 
-        # Add metrics to the result
         result = {
-            **history,  # Include all history data
+            **history,
             "metrics": {
                 "distance_traveled": distance_traveled,
                 "time_elapsed": time_elapsed,
@@ -345,17 +280,11 @@ class Truck:
         return result
 
     def apply_gear_change(self, gear_change: int) -> None:
-        """
-        Apply a gear change request from the controller.
 
-        Args:
-            gear_change: -1 (down), 0 (no change), 1 (up)
-        """
         if gear_change == 0:
-            return  # No change requested
+            return
 
-        # Apply the requested change immediately (no timing constraint)
-        if gear_change > 0 and self._gear.value < 10:  # Shift up
+        if gear_change > 0 and self._gear.value < 10:
             self._gear = Gear(self._gear.value + 1)
-        elif gear_change < 0 and self._gear.value > 1:  # Shift down
+        elif gear_change < 0 and self._gear.value > 1:
             self._gear = Gear(self._gear.value - 1)

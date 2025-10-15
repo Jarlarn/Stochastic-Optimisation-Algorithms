@@ -2,12 +2,10 @@ import random
 import function_data
 import math
 
-# --- Load data from function_data.py ---
 data_samples = function_data.load_function_data()
 input_values = [x for x, y in data_samples]
 target_values = [y for x, y in data_samples]
 
-# === Genetic Programming Parameters ===
 POPULATION_SIZE = 250
 MIN_CHROMOSOME_LENGTH = 10
 MAX_CHROMOSOME_LENGTH = 30
@@ -17,7 +15,6 @@ VARIABLE_REGISTER_COUNT = 4
 CONSTANT_REGISTER_COUNT = 1
 CROSSOVER_PROBABILITY = 0.8
 
-# === Adaptive Mutation Control Parameters ===
 HIGH_ERROR_THRESHOLD = 0.20
 LOW_ERROR_THRESHOLD = 0.01
 MUTATION_RATE_AT_HIGH_ERROR = 6.0
@@ -32,9 +29,9 @@ OPERATOR_TO_INDEX = {op: i for i, op in enumerate(OPERATORS)}
 INDEX_TO_OPERATOR = {i: op for i, op in enumerate(OPERATORS)}
 CONSTANT_VALUES = [1.0, -1.0, 2.0, 0.0]
 
-MAX_ERROR_VALUE = 1e10  # Cap for error to avoid overflow
+MAX_ERROR_VALUE = 1e10
 
-TARGET_RMSE = 0.01  # Desired RMSE target for stopping
+TARGET_RMSE = 0.01
 
 
 class Individual:
@@ -68,11 +65,11 @@ class Individual:
 
 
 def generate_random_gene(gene_position):
-    if gene_position % INSTRUCTION_SIZE == 0:  # Operator
+    if gene_position % INSTRUCTION_SIZE == 0:
         return random.randint(0, 3)
-    elif gene_position % INSTRUCTION_SIZE == 1:  # Destination register
+    elif gene_position % INSTRUCTION_SIZE == 1:
         return random.randint(0, VARIABLE_REGISTER_COUNT - 1)
-    else:  # Operand register
+    else:
         return random.randint(0, VARIABLE_REGISTER_COUNT + CONSTANT_REGISTER_COUNT - 1)
 
 
@@ -183,15 +180,15 @@ def mutate_chromosome_with_rate(individual, mutation_probability):
     for gene_index in range(len(chromosome)):
         if random.random() < mutation_probability:
             gene_position = gene_index % INSTRUCTION_SIZE
-            if gene_position == 0:  # Operator
+            if gene_position == 0:
                 chromosome[gene_index] = random.randint(0, 3)
-            elif gene_position == 1:  # Destination register
+            elif gene_position == 1:
                 chromosome[gene_index] = random.randint(0, VARIABLE_REGISTER_COUNT - 1)
-            else:  # Operand register
+            else:
                 chromosome[gene_index] = random.randint(
                     0, VARIABLE_REGISTER_COUNT + CONSTANT_REGISTER_COUNT - 1
                 )
-    return individual  # For compatibility with rest of code
+    return individual
 
 
 def save_best_chromosome(individual):
@@ -220,7 +217,7 @@ def main():
 
     generation = 0
     while best_error > TARGET_RMSE:
-        # 1. Determine the GLOBAL base mutation rate based on current error
+
         if best_error > HIGH_ERROR_THRESHOLD:
             global_mutation_rate = MUTATION_RATE_AT_HIGH_ERROR
         elif best_error < LOW_ERROR_THRESHOLD:
@@ -233,12 +230,10 @@ def main():
                 MUTATION_RATE_AT_HIGH_ERROR - MUTATION_RATE_AT_LOW_ERROR
             )
 
-        # 2. Check for stagnation/progress to adjust the LOCAL mutation multiplier
         improvement_threshold = (
             best_overall_individual.fitness * IMPROVEMENT_THRESHOLD_RATIO
         )
         if best_fitness > best_overall_individual.fitness + improvement_threshold:
-            # Progress - cool down the adaptive multiplier
             adaptive_mutation_multiplier = max(
                 0.5, adaptive_mutation_multiplier * MUTATION_COOL_DOWN_FACTOR
             )
@@ -254,7 +249,6 @@ def main():
                 f"(base: {global_mutation_rate:.2f}, multiplier: {adaptive_mutation_multiplier:.2f})"
             )
         else:
-            # Stagnation - heat up the adaptive multiplier
             generations_without_improvement += 1
             if generations_without_improvement > STAGNATION_GENERATION_LIMIT:
                 adaptive_mutation_multiplier = min(
@@ -270,10 +264,8 @@ def main():
                     f"(base: {global_mutation_rate:.2f}, multiplier: {adaptive_mutation_multiplier:.2f})"
                 )
 
-        # 3. Calculate the FINAL mutation rate for this generation
         current_mutation_rate = global_mutation_rate * adaptive_mutation_multiplier
 
-        # Print periodic status updates
         if generation % 20 == 0:
             print(
                 f"[Generation {generation}] Status update: "
@@ -283,20 +275,18 @@ def main():
             )
 
         population.sort(key=lambda individual: individual.fitness, reverse=True)
-        new_population = [population[0]]  # Elitism: keep the best individual
+        new_population = [population[0]]
 
         while len(new_population) < POPULATION_SIZE:
             parent1 = tournament_selection(population)
             parent2 = tournament_selection(population)
 
-            # Only perform crossover with probability 0.8, else clone parents
             if random.random() < CROSSOVER_PROBABILITY:
                 child1, child2 = two_point_crossover(parent1, parent2)
             else:
                 child1 = Individual(parent1.chromosome[:])
                 child2 = Individual(parent2.chromosome[:])
 
-            # Discard children with more than MAX_INSTRUCTIONS instructions
             if (len(child1.chromosome) // INSTRUCTION_SIZE) > MAX_INSTRUCTIONS or (
                 len(child2.chromosome) // INSTRUCTION_SIZE
             ) > MAX_INSTRUCTIONS:

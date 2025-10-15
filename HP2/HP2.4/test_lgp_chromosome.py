@@ -1,14 +1,12 @@
 import math
 from TMP import BEST_CHROMOSOME, VARIABLE_REGISTER_COUNT, CONSTANTS
 import function_data
-from typing import List
 import sympy as sp
 import matplotlib.pyplot as plt
 import run_lgp
 
 OPERATORS = ["+", "-", "*", "/"]
 
-# replace direct access with a robust loader (works whether function_data exposes XS/YS or provides loader)
 if hasattr(function_data, "load_function_data"):
     _pairs = function_data.load_function_data()
     XS = [p[0] for p in _pairs]
@@ -88,8 +86,8 @@ def chromosome_symbolic_expression(chrom) -> sp.Expr:
                 v = a
             except Exception:
                 v = a
-        regs[dest] = v  # <-- Remove sp.simplify here
-    return regs[0]  # Skip simplification for speed
+        regs[dest] = v
+    return regs[0]
 
 
 def rational_polynomial_form(expr: sp.Expr):
@@ -99,7 +97,7 @@ def rational_polynomial_form(expr: sp.Expr):
     den = sp.expand(den)
     num_poly = sp.Poly(num, x)
     den_poly = sp.Poly(den, x)
-    a_coeffs = num_poly.all_coeffs()  # highest -> lowest
+    a_coeffs = num_poly.all_coeffs()
     b_coeffs = den_poly.all_coeffs()
 
     def coeffs_to_str(coeffs):
@@ -108,7 +106,7 @@ def rational_polynomial_form(expr: sp.Expr):
         for i, c in enumerate(coeffs):
             power = deg - i
             if float(c) == 0.0:
-                continue  # Omit zero terms robustly
+                continue
             term = f"{float(c):.6g}"
             if power >= 1:
                 term += "x" if power == 1 else f"x^{power}"
@@ -177,9 +175,7 @@ if __name__ == "__main__":
     plt.xlabel("x")
     plt.ylabel("y")
     plt.title("LGP Fit")
-    plt.savefig(
-        "LGP_fit.png", dpi=600, bbox_inches="tight"
-    )  # <-- Save the plot as LGP_fit.png
+    plt.savefig("LGP_fit.png", dpi=600, bbox_inches="tight")
     print("Ready to show plot.")
     plt.show()
     print("Plot closed.")

@@ -2,7 +2,6 @@ import math
 import numpy as np
 import matplotlib.pyplot as plt
 import random
-import os
 
 
 def initialize_pheromone_levels(number_of_cities, tau_0):
