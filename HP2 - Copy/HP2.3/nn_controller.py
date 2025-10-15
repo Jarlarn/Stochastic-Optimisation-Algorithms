@@ -197,3 +197,41 @@ def create_controller_from_chromosome(
         )
 
     return controller
+
+
+def test_nn_controller():
+    """Test the neural network controller"""
+    # Create a random chromosome
+    ni, nh, no = 3, 6, 2  # 3 inputs as specified
+    w_i_h_size = nh * (ni + 1)
+    w_h_o_size = no * (nh + 1)
+    chromosome = np.random.uniform(
+        0, 1, w_i_h_size + w_h_o_size
+    ).tolist()  # [0,1] range
+
+    # Create controller
+    nn = NeuralNetworkController(ni, nh, no, chromosome)
+
+    # Test with some inputs
+    position = 100.0
+    velocity = 20.0
+    brake_temp = 500.0
+    slope_angle = 5.0
+    gear = 3
+    current_time = 0.0  # Starting time
+
+    pedal, gear_change = nn.control(
+        position, velocity, brake_temp, slope_angle, gear, current_time
+    )
+
+    print(
+        f"Test inputs: velocity={velocity}, brake_temp={brake_temp}, slope_angle={slope_angle}, gear={gear}"
+    )
+    print(f"Control outputs: pedal={pedal:.3f}, gear_change={gear_change}")
+    print(
+        f"Normalized inputs: v/vmax={velocity/V_MAX:.3f}, α/αmax={slope_angle/ALPHA_MAX:.3f}, Tb/Tmax={brake_temp/T_MAX:.3f}"
+    )
+
+
+if __name__ == "__main__":
+    test_nn_controller()
